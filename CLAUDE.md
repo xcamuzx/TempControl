@@ -4,88 +4,47 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-TempControl is an ice-bath–style challenge dashboard running on a Raspberry Pi 5 in kiosk mode on an attached HDMI screen (mouse + keyboard).
+TempControl is an ice-bath challenge dashboard running on a Raspberry Pi 5 in kiosk mode (HDMI screen, mouse + keyboard).
 
 UX flow (cycles):
 1. **Enter names** — operator types 1 to 4 participant names.
-2. **Pick countdown** — anywhere from 1 to 3 minutes (hard cap 3 min).
-3. **Single click to start** — countdown runs visibly; live temperature from the I2C sensor is always shown.
-4. **Finish alert** — at 0:00, a full-screen visual overlay shows `Congratulations - Challenge Finished`. No audio, no browser notifications — overlay only.
-5. **Acknowledge click** — dismisses the alert and returns to step 1.
+2. **Pick countdown** — 1, 2, or 3 minutes (hard cap 3 min).
+3. **Single click to start** — countdown runs visibly; live temperature always shown.
+4. **Finish alert** — at 0:00, full-screen overlay: `Congratulations - Challenge Finished`. No audio, no browser notifications — overlay only.
+5. **Acknowledge click** — dismisses overlay, returns to step 1.
 
-Hard constraints (validate on backend AND frontend): max 4 names, max 3-minute countdown. The temperature readout is visible at all times, regardless of timer state. The dashboard is intentionally single-purpose — don't add multi-timer, history, auth, or other scope without checking with the user.
+Hard constraints (enforced backend AND frontend): max 4 names, max 3-minute countdown (60–180 s). Temperature readout visible at all times. Single-purpose kiosk — don't add multi-timer, history, auth, or other scope without checking with the user.
 
-Stack:
-- Backend: **FastAPI** (Python) — `app/main.py`
-- Frontend: hand-tuned HTML/CSS in `app/templates/index.html` (Google Fonts: Bebas Neue / Fraunces / Italianno / Source Sans 3 with Clear Sans + Monotype Corsiva fallbacks). Tailwind not used in the end — vanilla CSS gave more control over the editorial layout.
-- Sensor driver: `app/sensor.py` using `smbus2` against `/dev/i2c-1`
-- Display: **Chromium `--kiosk`** autostarted on the Pi desktop session, pointing at `http://localhost:8000`
-- Process supervision: `systemd` unit (Phase 5, not yet built)
+## Commands
 
-Color palette (locked): `#2e5d74` deep base · `#2f89b9` and `#0f75a8` blue accents · `#ffffff` and `#dddddd` light text · `#6e6f72` mute. Subtitles use `#dddddd` for contrast (mid-blue subtitles disappeared into the background).
+All commands run **on the Pi** over SSH (see Development Workflow below). The local WSL directory is a staging/commit area only — no I2C bus, no sensor.
 
-Logo asset: `app/static/newyicebaths_logo.png`. The header also has a QR slot beside the logo — currently a placeholder div until the user supplies the real `QR.png` (the file at repo root is a duplicate of the logo).
+```bash
+# Run the server (Pi only)
+./run.sh
+# equivalent to: .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-Public repo: https://github.com/xcamuzx/TempControl
+# Install deps into Pi venv
+.venv/bin/pip install -r requirements.txt
 
-## Deployment target
+# One-shot sensor probe (Phase 1 diagnostic)
+.venv/bin/python scripts/sensor_probe.py
 
-All code runs on a **Raspberry Pi 5** (aarch64 Linux). The local working directory on WSL is a staging area only — it has no I2C bus and cannot execute sensor code.
-
-## Development workflow (always)
-
-1. **SSH into the Pi 5** and run/test commands directly there. SSH credentials are in `.env` (gitignored); `.env.example` documents the required fields.
-2. **Verify on hardware** before considering anything "done" — type checks and unit tests don't exercise the sensor path.
-3. **`rsync` the Pi's working copy back** to `/home/fabricio/TempControl` after the change is verified.
-4. Commit from the local copy after rsync.
-
-Do not commit code that has only been verified locally. Do not try to mock the I2C bus to "test" on WSL — that defeats the purpose.
-
-## Hardware
-
-I2C temperature + humidity sensor wired directly to the Pi 5 GPIO header:
-
-| Pin | Signal |
-|-----|--------|
-| GPIO2 | SDA |
-| GPIO3 | SCL |
-| 3V3 | Vcc (sensor accepts 3.3–5 V) |
-| GND | GND |
-
-Sensor specs (matches SHT3x family — SHT30/31/35):
-- I2C address: **`0x44`**
-- Vcc: 3.3–5 V, < 1.5 mA
-- Humidity: 0–100 %RH, ±2 %RH
-- Temperature: −40 °C to +125 °C, ±0.2 °C
-- Cable: ~1 m
-
-To enable I2C on the Pi: `sudo raspi-config` → Interface Options → I2C → Enable, then verify with `i2cdetect -y 1` (should show `44`).
-
-## Secrets
-
-`.env` holds Pi SSH credentials for the local dev host (used to SSH and rsync into the Pi) — never committed. `.env.example` is the canonical schema; keep it in sync whenever a new field is introduced.
-
-The `.env` format is **`KEY:VALUE`** (colon-delimited, not `=`), with a project header on line 1:
-
-```
-RPI5 - TEMP CONTROL PROJECT
-IP_ADDRESS:10.175.168.xxx
-USER:xxxx
-PASSWORD:xxxxxxx
+# Verify I2C bus (should show 0x44)
+i2cdetect -y 1
 ```
 
-This is the user's chosen format — do not "fix" it to standard dotenv syntax. `.env` is consumed only by SSH/rsync commands from the local host; the Pi runtime does not read it. No `python-dotenv` dependency.
+There is no `__main__` block in `main.py` — do not run `python main.py`. No test suite or linter is configured.
 
-## Pi runtime layout
+## Architecture
 
-Working dir on the Pi is `~/TempControl/`, mirroring the local repo:
+**Backend:** FastAPI (`app/main.py`) — state machine in a module-level `ChallengeState` dataclass (single-user kiosk, no DB). No background tasks or timers — state transitions (`running→finished`) happen lazily via `tick()` called at the top of every API handler. Sensor driver in `app/sensor.py` using `smbus2` against `/dev/i2c-1`; `read()` retries 3× with incremental backoff (50 ms, 100 ms, 150 ms) before raising `SensorError`.
 
-- `.venv/` — venv with `fastapi`, `uvicorn[standard]`, `jinja2`, `smbus2` (gitignored)
-- `app/` — `main.py`, `sensor.py`, `templates/index.html`, `static/`
-- `scripts/sensor_probe.py` — one-shot sensor read used during Phase 1 bring-up
-- `run.sh` — `exec .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000`
+**Frontend:** Single-file Jinja template (`app/templates/index.html`, ~760 lines) — all HTML, CSS, and JS inlined. No build step, no bundler, no Tailwind. Rough layout: CSS custom properties & styles (~lines 1–300), HTML structure (~300–430), `<script>` with polling + UI logic (~430–760). Vanilla CSS with Google Fonts (Bebas Neue / Fraunces / Italianno / Source Sans 3, fallbacks: Clear Sans + Monotype Corsiva). The frontend polls the backend: temperature every 2s (`/api/temp`), challenge state every 1s (`/api/challenge/state`). Countdown display uses `requestAnimationFrame` against the server-provided `ends_at` timestamp for drift-free rendering.
 
-Launch the server with `./run.sh`. **Do not** run `python main.py` — there's no `__main__` block, and the system Python doesn't have the deps. The Pi user is `fabricio`; passwordless sudo is **not** configured (use `echo "$PASSWORD" | sudo -S …` from the local host when needed).
+**Visual effects:** Border-orbit comet animation during countdown (BL → TL → TR → BR → BL, 4s/edge, 16s loop, lead + two trailing halos). Finish overlay with frosted-glass backdrop.
+
+Color palette (locked): `#2e5d74` deep base · `#2f89b9` and `#0f75a8` blue accents · `#ffffff` and `#dddddd` light text · `#6e6f72` mute.
 
 ## API surface
 
@@ -93,32 +52,71 @@ Launch the server with `./run.sh`. **Do not** run `python main.py` — there's n
 |---|---|---|
 | GET | `/` | Jinja-rendered kiosk dashboard |
 | GET | `/api/temp` | Latest sensor reading (`temp_c`, `humidity`, `ts`) — 503 on sensor failure |
-| GET | `/api/challenge/state` | Current state machine (`idle` / `running` / `finished`); auto-transitions running→finished on lazy `tick()` |
+| GET | `/api/challenge/state` | Current state machine (`idle` / `running` / `finished`); auto-transitions running→finished via lazy `tick()` |
 | POST | `/api/challenge/start` | Body `{names: [1..4], duration_seconds: 60..180}`. 422 on bad input, 409 if not idle |
 | POST | `/api/challenge/ack` | Dismiss finished overlay, reset to idle. 409 if not finished |
 | GET | `/static/...` | Logo + (eventually) QR |
 
-State is held in a module-level `ChallengeState` dataclass — single-user kiosk, no DB.
+## Deployment target
+
+All code runs on a **Raspberry Pi 5** (aarch64 Linux). The local WSL working directory has no I2C bus and cannot execute sensor code.
+
+## Development workflow
+
+1. **SSH into the Pi 5** and run/test commands directly there. SSH credentials are in `.env` (gitignored); `.env.example` documents the required fields (`IP_ADDRESS`, `USER`, `PASSWORD` — colon-delimited).
+2. **Verify on hardware** before considering anything "done" — type checks don't exercise the sensor path.
+3. **`rsync` the Pi's working copy back** to the local repo after the change is verified:
+   ```bash
+   rsync -avz <user>@<pi-ip>:~/TempControl/ /path/to/local/IceSense/ --exclude .venv --exclude __pycache__
+   ```
+4. Commit from the local copy after rsync.
+
+Do not commit code that has only been verified locally. Do not mock the I2C bus to "test" on WSL.
+
+## Hardware
+
+I2C temperature + humidity sensor (SHT3x family — SHT30/31/35):
+
+| Pin | Signal |
+|-----|--------|
+| GPIO2 | SDA |
+| GPIO3 | SCL |
+| 3V3 | Vcc (3.3–5 V) |
+| GND | GND |
+
+I2C address: **`0x44`** on bus 1. An unrelated device at `0x36` (likely RP1 onboard) — ignore.
+
+To enable I2C: `sudo raspi-config` → Interface Options → I2C → Enable, then **reboot** (bus 1 only appears after reboot).
+
+## Secrets
+
+`.env` holds Pi SSH credentials — never committed. Format is **`KEY:VALUE`** (colon-delimited, not `=`), with a project header on line 1. This is the user's chosen format — do not change to standard dotenv syntax. `.env` is consumed only by SSH/rsync from the local host; the Pi runtime does not read it. No `python-dotenv` dependency.
+
+## Pi runtime layout
+
+Working dir on the Pi: `~/TempControl/`
+- `.venv/` — venv with `fastapi`, `uvicorn[standard]`, `jinja2`, `smbus2`
+- `app/` — `main.py`, `sensor.py`, `templates/index.html`, `static/`
+- `scripts/sensor_probe.py` — one-shot sensor read for bring-up diagnostics
+- `run.sh` — launches uvicorn
+
+Pi user is `fabricio`; passwordless sudo is **not** configured.
+
+## Logo and QR
+
+Logo asset: `app/static/newyicebaths_logo.png`. The header has a QR slot — currently a placeholder div. Once the user provides a real `QR.png`: move to `app/static/QR.png` and replace the placeholder in `index.html` with an `<img>`.
 
 ## Phase status
 
-Done:
-- **Phase 0** — repo bootstrap, `.env.example`, `.gitignore`, GitHub remote (SSH key auth).
-- **Phase 1** — Pi prep: I2C bus 1 enabled (required reboot after `dtparam=i2c_arm=on`), `i2c-tools` installed, sensor confirmed at `0x44`. An unrelated device shows up at `0x36` (likely RP1 onboard) — ignore. Probe script `scripts/sensor_probe.py` works.
-- **Phase 2** — `app/sensor.py` driver with CRC-8 verification and configurable retries.
-- **Phase 3** — FastAPI backend + state machine, all endpoints validated end-to-end on the Pi (including the 60s expiry path).
-- **Phase 4** — Kiosk UI: editorial cold-plunge layout, big Bebas Neue temperature, three click-to-start timer cards, finish overlay, border-orbit comet effect during countdown (BL → TL → TR → BR → BL, 4s/edge, 16s loop, with two trailing halos).
+Done: Phase 0 (repo bootstrap) · Phase 1 (Pi I2C setup) · Phase 2 (sensor driver with CRC-8) · Phase 3 (FastAPI + state machine) · Phase 4 (kiosk UI).
 
 Pending:
-- Real `QR.png` from the user (current root-level file is a duplicate of the logo). Once provided: move to `app/static/QR.png` and replace the placeholder div in `index.html` with an `<img>`.
-- **Phase 5** — kiosk autostart + service:
-  - `systemd` unit `tempcontrol.service` for the FastAPI process (Restart=on-failure, depends on the I2C device)
-  - Chromium kiosk autostart on Pi desktop login (`~/.config/wayfire.ini` autostart entry, `chromium-browser --kiosk --noerrdialogs --disable-infobars http://localhost:8000`)
-  - README install steps
+- Real `QR.png` from user (current root-level file is a duplicate of the logo).
+- **Phase 5** — kiosk autostart + service: `systemd` unit for FastAPI, Chromium kiosk autostart via `~/.config/wayfire.ini`, README install steps.
 
-## Pitfalls observed
+## Pitfalls
 
-- **Backgrounded SSH commands return exit code 255 when the SSH session is later interrupted** (e.g. by a `pkill` from another SSH). That's the SSH-disconnect code, not the remote process failing. uvicorn ran fine; only the foreground SSH transport died.
-- **Newer Starlette `TemplateResponse` API** wants `request` first: `templates.TemplateResponse(request, "index.html")`. The legacy `("index.html", {"request": request})` form raises `TypeError: unhashable type: 'dict'` (the dict gets used as the cache key).
-- **`/dev/i2c-1` only appears after a reboot** following `dtparam=i2c_arm=on` (or `raspi-config nonint do_i2c 0`). Pre-reboot only the internal RP1 buses (`/dev/i2c-13`, `/dev/i2c-14`) are visible.
-- **Pi DNS can be unconfigured on this LAN** even when LAN connectivity (SSH) works. If `pip install` fails, check `/etc/resolv.conf` and outbound 53 reachability — corporate networks may strip both.
+- **SSH exit code 255** when backgrounded SSH commands get interrupted (e.g. by `pkill` from another SSH) — that's the SSH-disconnect code, not the remote process failing.
+- **Starlette `TemplateResponse` API** wants `request` first: `templates.TemplateResponse(request, "index.html")`. The legacy dict form raises `TypeError: unhashable type: 'dict'`.
+- **`/dev/i2c-1` only appears after reboot** following `dtparam=i2c_arm=on`. Pre-reboot only RP1 buses (`/dev/i2c-13`, `/dev/i2c-14`) are visible.
+- **Pi DNS may be unconfigured** on corporate LANs even when SSH works. If `pip install` fails, check `/etc/resolv.conf` and outbound 53 reachability.
