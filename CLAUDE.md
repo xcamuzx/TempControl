@@ -30,7 +30,7 @@ All commands run **on the Pi** over SSH (see Development Workflow below). The lo
 # One-shot sensor probe (Phase 1 diagnostic)
 .venv/bin/python scripts/sensor_probe.py
 
-# Verify I2C bus (should show 0x44)
+# Verify I2C bus (should show 0x44 sensor + 0x36 UPS)
 i2cdetect -y 1
 ```
 
@@ -38,9 +38,9 @@ There is no `__main__` block in `main.py` — do not run `python main.py`. No te
 
 ## Architecture
 
-**Backend:** FastAPI (`app/main.py`) — state machine in a module-level `ChallengeState` dataclass (single-user kiosk, no DB). No background tasks or timers — state transitions (`running→finished`) happen lazily via `tick()` called at the top of every API handler. Sensor driver in `app/sensor.py` using `smbus2` against `/dev/i2c-1`; `read()` retries 3× with incremental backoff (50 ms, 100 ms, 150 ms) before raising `SensorError`.
+**Backend:** FastAPI (`app/main.py`) — state machine in a module-level `ChallengeState` dataclass (single-user kiosk, no DB). No background tasks or timers — state transitions (`running→finished`) happen lazily via `tick()` called at the top of every API handler. Sensor driver in `app/sensor.py` using `smbus2` against `/dev/i2c-1`; `read()` retries 3× with incremental backoff (50 ms, 100 ms, 150 ms) before raising `SensorError`. UPS battery driver in `app/ups.py` reads the MAX17040 fuel gauge (same bus, `0x36`) with the same retry pattern.
 
-**Frontend:** Single-file Jinja template (`app/templates/index.html`, ~760 lines) — all HTML, CSS, and JS inlined. No build step, no bundler, no Tailwind. Rough layout: CSS custom properties & styles (~lines 1–300), HTML structure (~300–430), `<script>` with polling + UI logic (~430–760). Vanilla CSS with Google Fonts (Bebas Neue / Fraunces / Italianno / Source Sans 3, fallbacks: Clear Sans + Monotype Corsiva). The frontend polls the backend: temperature every 2s (`/api/temp`), challenge state every 1s (`/api/challenge/state`). Countdown display uses `requestAnimationFrame` against the server-provided `ends_at` timestamp for drift-free rendering.
+**Frontend:** Single-file Jinja template (`app/templates/index.html`, ~790 lines) — all HTML, CSS, and JS inlined. No build step, no bundler, no Tailwind. Rough layout: CSS custom properties & styles (~lines 1–330), HTML structure (~330–460), `<script>` with polling + UI logic (~460–790). Vanilla CSS with Google Fonts (Bebas Neue / Fraunces / Italianno / Source Sans 3, fallbacks: Clear Sans + Monotype Corsiva). The frontend polls the backend: temperature every 2s (`/api/temp`), challenge state every 1s (`/api/challenge/state`), battery every 30s (`/api/battery`). Countdown display uses `requestAnimationFrame` against the server-provided `ends_at` timestamp for drift-free rendering.
 
 **Visual effects:** Border-orbit comet animation during countdown (BL → TL → TR → BR → BL, 4s/edge, 16s loop, lead + two trailing halos). Finish overlay with frosted-glass backdrop.
 
@@ -52,6 +52,7 @@ Color palette (locked): `#2e5d74` deep base · `#2f89b9` and `#0f75a8` blue acce
 |---|---|---|
 | GET | `/` | Jinja-rendered kiosk dashboard |
 | GET | `/api/temp` | Latest sensor reading (`temp_c`, `humidity`, `ts`) — 503 on sensor failure |
+| GET | `/api/battery` | UPS battery level (`percent`, `voltage`, `ts`) — 503 on read failure |
 | GET | `/api/challenge/state` | Current state machine (`idle` / `running` / `finished`); auto-transitions running→finished via lazy `tick()` |
 | POST | `/api/challenge/start` | Body `{names: [1..4], duration_seconds: 60..180}`. 422 on bad input, 409 if not idle |
 | POST | `/api/challenge/ack` | Dismiss finished overlay, reset to idle. 409 if not finished |
@@ -75,18 +76,11 @@ Do not commit code that has only been verified locally. Do not mock the I2C bus 
 
 ## Hardware
 
-I2C temperature + humidity sensor (SHT3x family — SHT30/31/35):
+Both devices share **I2C bus 1** (GPIO2 SDA / GPIO3 SCL). To enable: `sudo raspi-config` → Interface Options → I2C → Enable, then **reboot** (bus 1 only appears after reboot).
 
-| Pin | Signal |
-|-----|--------|
-| GPIO2 | SDA |
-| GPIO3 | SCL |
-| 3V3 | Vcc (3.3–5 V) |
-| GND | GND |
+**Temperature sensor** — SHT3x (SHT30/31/35), address **`0x44`**. Wired to GPIO header: 3V3 Vcc, GND, GPIO2 SDA, GPIO3 SCL. Driver: `app/sensor.py`.
 
-I2C address: **`0x44`** on bus 1. An unrelated device at `0x36` (likely RP1 onboard) — ignore.
-
-To enable I2C: `sudo raspi-config` → Interface Options → I2C → Enable, then **reboot** (bus 1 only appears after reboot).
+**UPS** — Geekworm X1200 HAT with MAX17040 fuel gauge, address **`0x36`**. Reads battery state-of-charge (SOC) and cell voltage. The `0x36` device visible in `i2cdetect` is the UPS gauge, not an RP1 phantom. Driver: `app/ups.py`. Do not power the Pi through USB-C while the X1200 is installed.
 
 ## Secrets
 
@@ -96,7 +90,7 @@ To enable I2C: `sudo raspi-config` → Interface Options → I2C → Enable, the
 
 Working dir on the Pi: `~/TempControl/`
 - `.venv/` — venv with `fastapi`, `uvicorn[standard]`, `jinja2`, `smbus2`
-- `app/` — `main.py`, `sensor.py`, `templates/index.html`, `static/`
+- `app/` — `main.py`, `sensor.py`, `ups.py`, `templates/index.html`, `static/`
 - `scripts/sensor_probe.py` — one-shot sensor read for bring-up diagnostics
 - `run.sh` — launches uvicorn
 
