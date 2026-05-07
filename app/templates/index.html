@@ -380,6 +380,70 @@ footer {
   margin: 0 0.15em;
 }
 
+/* ─────────── BORDER ORBIT ─────────── */
+.border-orbit {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  opacity: 0;
+  transition: opacity 500ms ease;
+}
+.border-orbit.active { opacity: 1; }
+
+.border-orbit .lead,
+.border-orbit .trail-1,
+.border-orbit .trail-2 {
+  position: absolute;
+  top: 0; left: 0;
+  border-radius: 50%;
+  will-change: transform;
+}
+.border-orbit .lead {
+  width: 22px; height: 22px;
+  background: radial-gradient(circle,
+    #ffffff 0%,
+    #2f89b9 38%,
+    rgba(15,117,168,0.6) 65%,
+    transparent 85%);
+  box-shadow:
+    0 0 16px 6px rgba(255,255,255,0.35),
+    0 0 32px 10px rgba(47,137,185,0.7),
+    0 0 64px 22px rgba(15,117,168,0.4),
+    0 0 110px 38px rgba(15,117,168,0.18);
+}
+.border-orbit .trail-1 {
+  width: 16px; height: 16px;
+  background: radial-gradient(circle,
+    rgba(47,137,185,0.85) 0%,
+    rgba(15,117,168,0.4) 55%,
+    transparent 80%);
+  filter: blur(2px);
+  opacity: 0.85;
+}
+.border-orbit .trail-2 {
+  width: 12px; height: 12px;
+  background: radial-gradient(circle,
+    rgba(47,137,185,0.55) 0%,
+    rgba(15,117,168,0.2) 60%,
+    transparent 80%);
+  filter: blur(4px);
+  opacity: 0.6;
+}
+
+.border-orbit.active .lead    { animation: border-orbit 16s linear infinite; }
+.border-orbit.active .trail-1 { animation: border-orbit 16s linear infinite; animation-delay: -15.7s; }
+.border-orbit.active .trail-2 { animation: border-orbit 16s linear infinite; animation-delay: -15.4s; }
+
+@keyframes border-orbit {
+  /* BL → TL → TR → BR → BL (CCW from screen viewer; per spec) */
+  0%   { transform: translate(0vw, 100vh) translate(-50%, -50%); }
+  25%  { transform: translate(0vw, 0vh)   translate(-50%, -50%); }
+  50%  { transform: translate(100vw, 0vh) translate(-50%, -50%); }
+  75%  { transform: translate(100vw, 100vh) translate(-50%, -50%); }
+  100% { transform: translate(0vw, 100vh) translate(-50%, -50%); }
+}
+
 /* ─────────── OVERLAY ─────────── */
 .overlay {
   position: fixed;
@@ -529,6 +593,12 @@ footer {
   </footer>
 </div>
 
+<div id="border-orbit" class="border-orbit" aria-hidden="true">
+  <div class="trail-2"></div>
+  <div class="trail-1"></div>
+  <div class="lead"></div>
+</div>
+
 <div id="finish-overlay" class="overlay hidden">
   <div class="overlay-eyebrow">Congratulations</div>
   <div class="overlay-headline">CHALLENGE<br>FINISHED</div>
@@ -575,6 +645,7 @@ function showIdle(transition) {
   $('#timer-buttons').classList.remove('hidden');
   $('#countdown-wrap').classList.add('hidden');
   $('#finish-overlay').classList.add('hidden');
+  $('#border-orbit').classList.remove('active');
   setNamesEditable(true);
   if (transition) clearNameInputs();
   stopCountdown();
@@ -588,12 +659,19 @@ function showRunning(s, transition) {
   if (transition) writeNameInputs(s.names);
   endsAtMs = (s.ends_at || (Date.now()/1000 + s.remaining_seconds)) * 1000;
   startCountdown();
+  if (transition) {
+    const orbit = $('#border-orbit');
+    orbit.classList.remove('active');
+    void orbit.offsetWidth;  /* force reflow so the animation restarts at BL */
+    orbit.classList.add('active');
+  }
 }
 
 function showFinished(s, transition) {
   $('#timer-buttons').classList.add('hidden');
   $('#countdown-wrap').classList.add('hidden');
   $('#finish-overlay').classList.remove('hidden');
+  $('#border-orbit').classList.remove('active');
   stopCountdown();
 }
 
