@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+*.swp
+
+# WSL alternate-data-stream artifacts
+*:Zone.Identifier
+
+# Claude Code local state
+.claude/
