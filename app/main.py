@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator
 
 from app.sensor import Sensor, SensorError
+from app.ups import UPS, UPSError
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -27,6 +28,7 @@ app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="
 templates = Jinja2Templates(directory=os.path.join(HERE, "templates"))
 
 sensor = Sensor()
+ups = UPS()
 
 
 @dataclass
@@ -94,6 +96,15 @@ def api_temp():
     except SensorError as e:
         raise HTTPException(status_code=503, detail=str(e))
     return {"temp_c": round(r.temp_c, 2), "humidity": round(r.humidity, 2), "ts": r.ts}
+
+
+@app.get("/api/battery")
+def api_battery():
+    try:
+        r = ups.read()
+    except UPSError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    return {"percent": r.percent, "voltage": r.voltage, "ts": r.ts}
 
 
 @app.post("/api/challenge/start")
