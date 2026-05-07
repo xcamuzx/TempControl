@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TempControl</title>
+</head>
+<body style="font-family: system-ui, sans-serif; padding: 2rem;">
+  <img src="/static/newyicebaths_logo.png" alt="logo" style="max-width: 200px;">
+  <h1>TempControl &mdash; Phase 3 shell</h1>
+  <p>Placeholder. Real UI comes in Phase 4.</p>
+  <h3>Sensor</h3>
+  <pre id="temp">loading...</pre>
+  <h3>Challenge state</h3>
+  <pre id="state">loading...</pre>
+  <script>
+    async function tick() {
+      try {
+        const t = await fetch('/api/temp').then(r => r.json());
+        document.getElementById('temp').textContent = JSON.stringify(t, null, 2);
+      } catch (e) { document.getElementById('temp').textContent = String(e); }
+      try {
+        const s = await fetch('/api/challenge/state').then(r => r.json());
+        document.getElementById('state').textContent = JSON.stringify(s, null, 2);
+      } catch (e) { document.getElementById('state').textContent = String(e); }
+    }
+    tick();
+    setInterval(tick, 2000);
+  </script>
+</body>
+</html>
