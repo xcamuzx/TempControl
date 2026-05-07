@@ -16,13 +16,15 @@ UX flow (cycles):
 Hard constraints (validate on backend AND frontend): max 4 names, max 3-minute countdown. The temperature readout is visible at all times, regardless of timer state. The dashboard is intentionally single-purpose — don't add multi-timer, history, auth, or other scope without checking with the user.
 
 Stack:
-- Backend: **FastAPI** (Python)
-- Frontend: **HTMX + Tailwind** (no build step)
-- Sensor: I2C SHT3x at `0x44` via `smbus2` or `adafruit-circuitpython-sht31d`
-- Display: **Chromium `--kiosk`** autostarted on the Pi desktop session, pointing at `http://localhost:<port>`
-- Process supervision: `systemd` user/system unit for the FastAPI app
+- Backend: **FastAPI** (Python) — `app/main.py`
+- Frontend: hand-tuned HTML/CSS in `app/templates/index.html` (Google Fonts: Bebas Neue / Fraunces / Italianno / Source Sans 3 with Clear Sans + Monotype Corsiva fallbacks). Tailwind not used in the end — vanilla CSS gave more control over the editorial layout.
+- Sensor driver: `app/sensor.py` using `smbus2` against `/dev/i2c-1`
+- Display: **Chromium `--kiosk`** autostarted on the Pi desktop session, pointing at `http://localhost:8000`
+- Process supervision: `systemd` unit (Phase 5, not yet built)
 
-Logo asset: `newyicebaths_logo.png` (provided by the user, served as a static file).
+Color palette (locked): `#2e5d74` deep base · `#2f89b9` and `#0f75a8` blue accents · `#ffffff` and `#dddddd` light text · `#6e6f72` mute. Subtitles use `#dddddd` for contrast (mid-blue subtitles disappeared into the background).
+
+Logo asset: `app/static/newyicebaths_logo.png`. The header also has a QR slot beside the logo — currently a placeholder div until the user supplies the real `QR.png` (the file at repo root is a duplicate of the logo).
 
 Public repo: https://github.com/xcamuzx/TempControl
 
@@ -73,3 +75,50 @@ PASSWORD:xxxxxxx
 ```
 
 This is the user's chosen format — do not "fix" it to standard dotenv syntax. `.env` is consumed only by SSH/rsync commands from the local host; the Pi runtime does not read it. No `python-dotenv` dependency.
+
+## Pi runtime layout
+
+Working dir on the Pi is `~/TempControl/`, mirroring the local repo:
+
+- `.venv/` — venv with `fastapi`, `uvicorn[standard]`, `jinja2`, `smbus2` (gitignored)
+- `app/` — `main.py`, `sensor.py`, `templates/index.html`, `static/`
+- `scripts/sensor_probe.py` — one-shot sensor read used during Phase 1 bring-up
+- `run.sh` — `exec .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000`
+
+Launch the server with `./run.sh`. **Do not** run `python main.py` — there's no `__main__` block, and the system Python doesn't have the deps. The Pi user is `fabricio`; passwordless sudo is **not** configured (use `echo "$PASSWORD" | sudo -S …` from the local host when needed).
+
+## API surface
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/` | Jinja-rendered kiosk dashboard |
+| GET | `/api/temp` | Latest sensor reading (`temp_c`, `humidity`, `ts`) — 503 on sensor failure |
+| GET | `/api/challenge/state` | Current state machine (`idle` / `running` / `finished`); auto-transitions running→finished on lazy `tick()` |
+| POST | `/api/challenge/start` | Body `{names: [1..4], duration_seconds: 60..180}`. 422 on bad input, 409 if not idle |
+| POST | `/api/challenge/ack` | Dismiss finished overlay, reset to idle. 409 if not finished |
+| GET | `/static/...` | Logo + (eventually) QR |
+
+State is held in a module-level `ChallengeState` dataclass — single-user kiosk, no DB.
+
+## Phase status
+
+Done:
+- **Phase 0** — repo bootstrap, `.env.example`, `.gitignore`, GitHub remote (SSH key auth).
+- **Phase 1** — Pi prep: I2C bus 1 enabled (required reboot after `dtparam=i2c_arm=on`), `i2c-tools` installed, sensor confirmed at `0x44`. An unrelated device shows up at `0x36` (likely RP1 onboard) — ignore. Probe script `scripts/sensor_probe.py` works.
+- **Phase 2** — `app/sensor.py` driver with CRC-8 verification and configurable retries.
+- **Phase 3** — FastAPI backend + state machine, all endpoints validated end-to-end on the Pi (including the 60s expiry path).
+- **Phase 4** — Kiosk UI: editorial cold-plunge layout, big Bebas Neue temperature, three click-to-start timer cards, finish overlay, border-orbit comet effect during countdown (BL → TL → TR → BR → BL, 4s/edge, 16s loop, with two trailing halos).
+
+Pending:
+- Real `QR.png` from the user (current root-level file is a duplicate of the logo). Once provided: move to `app/static/QR.png` and replace the placeholder div in `index.html` with an `<img>`.
+- **Phase 5** — kiosk autostart + service:
+  - `systemd` unit `tempcontrol.service` for the FastAPI process (Restart=on-failure, depends on the I2C device)
+  - Chromium kiosk autostart on Pi desktop login (`~/.config/wayfire.ini` autostart entry, `chromium-browser --kiosk --noerrdialogs --disable-infobars http://localhost:8000`)
+  - README install steps
+
+## Pitfalls observed
+
+- **Backgrounded SSH commands return exit code 255 when the SSH session is later interrupted** (e.g. by a `pkill` from another SSH). That's the SSH-disconnect code, not the remote process failing. uvicorn ran fine; only the foreground SSH transport died.
+- **Newer Starlette `TemplateResponse` API** wants `request` first: `templates.TemplateResponse(request, "index.html")`. The legacy `("index.html", {"request": request})` form raises `TypeError: unhashable type: 'dict'` (the dict gets used as the cache key).
+- **`/dev/i2c-1` only appears after a reboot** following `dtparam=i2c_arm=on` (or `raspi-config nonint do_i2c 0`). Pre-reboot only the internal RP1 buses (`/dev/i2c-13`, `/dev/i2c-14`) are visible.
+- **Pi DNS can be unconfigured on this LAN** even when LAN connectivity (SSH) works. If `pip install` fails, check `/etc/resolv.conf` and outbound 53 reachability — corporate networks may strip both.
