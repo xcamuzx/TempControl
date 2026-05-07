@@ -1,30 +1,682 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>TempControl</title>
+<meta charset="UTF-8">
+<title>Newy Ice Baths · Cold Plunge Kiosk</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300;1,9..144,400&family=Italianno&family=Source+Sans+3:wght@200;300;400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --c-deep:   #2e5d74;
+  --c-mid:    #2f89b9;
+  --c-blue:   #0f75a8;
+  --c-white:  #ffffff;
+  --c-pale:   #dddddd;
+  --c-mute:   #6e6f72;
+
+  --f-display: 'Bebas Neue', 'Oswald', sans-serif;
+  --f-serif:   'Fraunces', 'Cormorant Garamond', serif;
+  --f-sans:    'Clear Sans', 'Source Sans 3', system-ui, sans-serif;
+  --f-script:  'Monotype Corsiva', 'Italianno', cursive;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; overflow: hidden; }
+
+body {
+  background:
+    radial-gradient(ellipse 60% 45% at 22% 18%, rgba(47,137,185,0.22) 0%, transparent 65%),
+    radial-gradient(ellipse 70% 55% at 78% 88%, rgba(15,117,168,0.18) 0%, transparent 65%),
+    var(--c-deep);
+  color: var(--c-white);
+  font-family: var(--f-sans);
+  font-weight: 300;
+  letter-spacing: 0.02em;
+  user-select: none;
+  cursor: default;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* atmospheric grain */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 1;
+  mix-blend-mode: overlay;
+}
+
+.screen {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  height: 100vh;
+  padding: 2.4vh 3.6vw;
+  gap: 1.6vh;
+}
+
+/* ─────────── HEADER ─────────── */
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(221,221,221,0.18);
+  padding-bottom: 1.6vh;
+  animation: fade-up 700ms ease-out;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 1.2vw;
+}
+.brand .logo,
+.brand .qr-slot {
+  height: 7.4vh;
+  width: 7.4vh;
+  background: var(--c-white);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.brand .logo img,
+.brand .qr-slot img {
+  height: 100%;
+  width: 100%;
+  object-fit: contain;
+  padding: 0.6vh;
+}
+.qr-slot.placeholder {
+  background: transparent;
+  border: 1px dashed rgba(221,221,221,0.32);
+  color: rgba(221,221,221,0.55);
+  font-family: var(--f-sans);
+  font-size: 0.6vw;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  text-align: center;
+  line-height: 1.3;
+}
+.brand-text {
+  text-align: right;
+}
+.brand-text .name {
+  font-family: var(--f-display);
+  font-size: 2.2vw;
+  letter-spacing: 0.22em;
+  color: var(--c-pale);
+  line-height: 1;
+}
+.brand-text .tag {
+  font-family: var(--f-serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 0.85vw;
+  letter-spacing: 0.16em;
+  color: var(--c-mute);
+  text-transform: lowercase;
+  margin-top: 0.4vh;
+}
+
+/* ─────────── NAMES ─────────── */
+.names {
+  animation: fade-up 700ms ease-out 80ms backwards;
+}
+.names-label {
+  font-family: var(--f-serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 1.1vw;
+  color: var(--c-mid);
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  margin-bottom: 0.8vh;
+}
+.names-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.4vw;
+}
+.name-cell {
+  position: relative;
+  border-bottom: 1px solid rgba(221,221,221,0.32);
+  transition: border-color 220ms ease;
+}
+.name-cell::before {
+  content: attr(data-num);
+  position: absolute;
+  left: 0;
+  top: -1.4vh;
+  font-family: var(--f-sans);
+  font-size: 0.7vw;
+  font-weight: 600;
+  letter-spacing: 0.4em;
+  color: var(--c-mute);
+}
+.name-input {
+  background: transparent;
+  border: 0;
+  color: var(--c-white);
+  font-family: var(--f-display);
+  font-size: 2.6vw;
+  letter-spacing: 0.06em;
+  padding: 0.4vh 0;
+  width: 100%;
+  text-align: left;
+  text-transform: uppercase;
+  outline: none;
+}
+.name-input::placeholder {
+  color: rgba(110,111,114,0.55);
+  font-weight: 400;
+}
+.name-cell:focus-within {
+  border-bottom-color: var(--c-mid);
+}
+.name-input:disabled {
+  color: var(--c-pale);
+  opacity: 1;
+}
+
+/* ─────────── MAIN GRID ─────────── */
+.main {
+  display: grid;
+  grid-template-columns: 1.05fr 1px 0.95fr;
+  align-items: center;
+  gap: 3.2vw;
+  padding: 1.4vh 0;
+}
+.divider-v {
+  background: rgba(221,221,221,0.18);
+  height: 70%;
+  align-self: center;
+}
+.section-label {
+  font-family: var(--f-serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 1.4vw;
+  color: var(--c-mid);
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  margin-bottom: 1vh;
+}
+
+/* TEMPERATURE */
+.temp-block {
+  animation: fade-up 700ms ease-out 160ms backwards;
+}
+.temp-value {
+  font-family: var(--f-display);
+  font-size: 19vw;
+  font-feature-settings: 'tnum';
+  line-height: 0.82;
+  color: var(--c-white);
+  display: inline-flex;
+  align-items: flex-start;
+}
+.temp-value .deg {
+  font-size: 7.5vw;
+  margin-top: 1.5vh;
+  margin-left: 0.5vw;
+  color: var(--c-mid);
+  line-height: 1;
+}
+.temp-unit {
+  font-family: var(--f-sans);
+  font-weight: 400;
+  font-size: 1.05vw;
+  letter-spacing: 0.42em;
+  color: var(--c-mute);
+  text-transform: uppercase;
+  margin-top: 0.6vh;
+  display: flex;
+  align-items: center;
+  gap: 0.7vw;
+}
+.live-dot {
+  width: 0.55vw;
+  height: 0.55vw;
+  background: var(--c-mid);
+  border-radius: 50%;
+  animation: pulse 2.2s ease-in-out infinite;
+  box-shadow: 0 0 0.8vw rgba(47,137,185,0.6);
+}
+
+/* TIMER */
+.timer-block {
+  animation: fade-up 700ms ease-out 240ms backwards;
+}
+.timer-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1vh;
+}
+.timer-btn {
+  background: transparent;
+  border: 1px solid rgba(221,221,221,0.28);
+  color: var(--c-white);
+  padding: 2vh 1.8vw;
+  font-family: var(--f-display);
+  letter-spacing: 0.08em;
+  text-align: left;
+  cursor: pointer;
+  transition: background 220ms ease, border-color 220ms ease, transform 220ms ease;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+}
+.timer-btn .digits {
+  font-size: 4.2vw;
+  line-height: 0.9;
+  font-feature-settings: 'tnum';
+}
+.timer-btn .label-mini {
+  font-family: var(--f-serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 0.95vw;
+  letter-spacing: 0.28em;
+  color: var(--c-mute);
+  text-transform: uppercase;
+}
+.timer-btn::after {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--c-mid);
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 280ms ease;
+}
+.timer-btn:hover:not(:disabled),
+.timer-btn:focus-visible:not(:disabled) {
+  background: linear-gradient(90deg, rgba(15,117,168,0.42), rgba(15,117,168,0.1));
+  border-color: var(--c-mid);
+  transform: translateX(0.3vw);
+  outline: none;
+}
+.timer-btn:hover:not(:disabled)::after,
+.timer-btn:focus-visible:not(:disabled)::after {
+  transform: scaleY(1);
+}
+.timer-btn:active:not(:disabled) {
+  background: rgba(15,117,168,0.65);
+}
+.timer-btn:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+}
+
+/* COUNTDOWN running */
+.countdown-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1vh;
+  padding: 1vh 0;
+}
+.countdown {
+  font-family: var(--f-display);
+  font-size: 16vw;
+  letter-spacing: 0.06em;
+  color: var(--c-white);
+  font-feature-settings: 'tnum';
+  line-height: 0.9;
+  text-shadow: 0 0 5vw rgba(47,137,185,0.18);
+}
+.countdown-meta {
+  font-family: var(--f-serif);
+  font-style: italic;
+  color: var(--c-mid);
+  letter-spacing: 0.36em;
+  font-size: 1.2vw;
+  text-transform: uppercase;
+}
+
+/* ─────────── FOOTER ─────────── */
+footer {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  align-items: center;
+  border-top: 1px solid rgba(221,221,221,0.18);
+  padding-top: 1.4vh;
+  animation: fade-up 700ms ease-out 320ms backwards;
+}
+.foot-meta {
+  font-family: var(--f-sans);
+  font-weight: 400;
+  font-size: 0.78vw;
+  color: var(--c-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.36em;
+}
+.foot-meta.right { text-align: right; font-feature-settings: 'tnum'; }
+.phrase {
+  font-family: var(--f-script);
+  font-style: italic;
+  font-size: 2.6vw;
+  color: var(--c-pale);
+  letter-spacing: 0.01em;
+  text-align: center;
+  line-height: 1;
+}
+.phrase .quote-mark {
+  color: var(--c-mid);
+  font-family: var(--f-serif);
+  font-size: 0.5em;
+  vertical-align: 0.3em;
+  margin: 0 0.2em;
+}
+
+/* ─────────── OVERLAY ─────────── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(46,93,116,0.96);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  animation: overlay-in 500ms ease-out;
+}
+.overlay::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.04 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.6;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+.overlay-eyebrow {
+  font-family: var(--f-serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 2.4vw;
+  color: var(--c-mid);
+  letter-spacing: 0.2em;
+  margin-bottom: 1.2vh;
+  animation: fade-up 600ms ease-out 200ms backwards;
+}
+.overlay-headline {
+  font-family: var(--f-display);
+  font-size: 12vw;
+  letter-spacing: 0.06em;
+  line-height: 0.86;
+  text-align: center;
+  color: var(--c-white);
+  animation: fade-up 700ms ease-out 350ms backwards;
+}
+.overlay-rule {
+  width: 14vw;
+  height: 1px;
+  background: rgba(221,221,221,0.3);
+  margin: 3vh 0;
+  animation: rule-in 800ms ease-out 700ms backwards;
+}
+.overlay-hint {
+  font-family: var(--f-script);
+  font-style: italic;
+  font-size: 1.9vw;
+  color: var(--c-pale);
+  opacity: 0.65;
+  animation: fade-up 700ms ease-out 800ms backwards, blink 2.6s ease-in-out 1.6s infinite;
+}
+
+.hidden { display: none !important; }
+.invisible { visibility: hidden; }
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(0.8vh); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.35; transform: scale(0.92); }
+}
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes blink {
+  0%, 100% { opacity: 0.65; }
+  50%      { opacity: 0.22; }
+}
+@keyframes rule-in {
+  from { width: 0; opacity: 0; }
+  to   { width: 14vw; opacity: 1; }
+}
+</style>
 </head>
-<body style="font-family: system-ui, sans-serif; padding: 2rem;">
-  <img src="/static/newyicebaths_logo.png" alt="logo" style="max-width: 200px;">
-  <h1>TempControl &mdash; Phase 3 shell</h1>
-  <p>Placeholder. Real UI comes in Phase 4.</p>
-  <h3>Sensor</h3>
-  <pre id="temp">loading...</pre>
-  <h3>Challenge state</h3>
-  <pre id="state">loading...</pre>
-  <script>
-    async function tick() {
-      try {
-        const t = await fetch('/api/temp').then(r => r.json());
-        document.getElementById('temp').textContent = JSON.stringify(t, null, 2);
-      } catch (e) { document.getElementById('temp').textContent = String(e); }
-      try {
-        const s = await fetch('/api/challenge/state').then(r => r.json());
-        document.getElementById('state').textContent = JSON.stringify(s, null, 2);
-      } catch (e) { document.getElementById('state').textContent = String(e); }
-    }
-    tick();
-    setInterval(tick, 2000);
-  </script>
+<body>
+<div class="screen">
+
+  <header>
+    <div class="brand">
+      <div class="logo"><img src="/static/newyicebaths_logo.png" alt="Newy Ice Baths"></div>
+      <div id="qr-slot" class="qr-slot placeholder">QR<br>scan&nbsp;here</div>
+    </div>
+    <div class="brand-text">
+      <div class="name">NEWY ICE BATHS</div>
+      <div class="tag">cold plunge protocol &middot; kiosk</div>
+    </div>
+  </header>
+
+  <section class="names">
+    <div class="names-label">Participants</div>
+    <div class="names-row">
+      <div class="name-cell" data-num="01"><input class="name-input" maxlength="32" placeholder="enter name"></div>
+      <div class="name-cell" data-num="02"><input class="name-input" maxlength="32" placeholder="enter name"></div>
+      <div class="name-cell" data-num="03"><input class="name-input" maxlength="32" placeholder="enter name"></div>
+      <div class="name-cell" data-num="04"><input class="name-input" maxlength="32" placeholder="enter name"></div>
+    </div>
+  </section>
+
+  <section class="main">
+    <div class="temp-block">
+      <div class="section-label">Bath Temperature</div>
+      <div class="temp-value">
+        <span id="temp-value">--</span>
+        <span class="deg">°</span>
+      </div>
+      <div class="temp-unit"><span class="live-dot"></span>Celsius &middot; live</div>
+    </div>
+
+    <div class="divider-v"></div>
+
+    <div class="timer-block">
+      <div class="section-label">The Challenge</div>
+      <div id="timer-buttons" class="timer-buttons">
+        <button class="timer-btn" data-seconds="60">
+          <span class="digits">1:00</span>
+          <span class="label-mini">One Minute</span>
+        </button>
+        <button class="timer-btn" data-seconds="120">
+          <span class="digits">2:00</span>
+          <span class="label-mini">Two Minutes</span>
+        </button>
+        <button class="timer-btn" data-seconds="180">
+          <span class="digits">3:00</span>
+          <span class="label-mini">Three Minutes</span>
+        </button>
+      </div>
+      <div id="countdown-wrap" class="countdown-wrap hidden">
+        <div id="countdown" class="countdown">--:--</div>
+        <div class="countdown-meta">Holding</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="foot-meta">cold plunge protocol</div>
+    <div class="phrase"><span class="quote-mark">&ldquo;</span>the cold reveals what the comfort hides<span class="quote-mark">&rdquo;</span></div>
+    <div class="foot-meta right" id="clock">--:--</div>
+  </footer>
+</div>
+
+<div id="finish-overlay" class="overlay hidden">
+  <div class="overlay-eyebrow">Congratulations</div>
+  <div class="overlay-headline">CHALLENGE<br>FINISHED</div>
+  <div class="overlay-rule"></div>
+  <div class="overlay-hint">tap to continue</div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
+
+let prevStatus = null;
+let countdownRaf = null;
+let endsAtMs = null;
+
+async function fetchTemp() {
+  try {
+    const r = await fetch('/api/temp');
+    if (!r.ok) return;
+    const data = await r.json();
+    $('#temp-value').textContent = data.temp_c.toFixed(1);
+  } catch (_) {}
+}
+
+async function fetchState() {
+  try {
+    const r = await fetch('/api/challenge/state');
+    if (!r.ok) return;
+    const s = await r.json();
+    applyState(s);
+  } catch (_) {}
+}
+
+function applyState(s) {
+  const transition = prevStatus !== s.status;
+  prevStatus = s.status;
+  if (s.status === 'idle')     showIdle(transition);
+  else if (s.status === 'running')  showRunning(s, transition);
+  else if (s.status === 'finished') showFinished(s, transition);
+  refreshTimerButtonsAvailability();
+}
+
+function showIdle(transition) {
+  $('#timer-buttons').classList.remove('hidden');
+  $('#countdown-wrap').classList.add('hidden');
+  $('#finish-overlay').classList.add('hidden');
+  setNamesEditable(true);
+  if (transition) clearNameInputs();
+  stopCountdown();
+}
+
+function showRunning(s, transition) {
+  $('#timer-buttons').classList.add('hidden');
+  $('#countdown-wrap').classList.remove('hidden');
+  $('#finish-overlay').classList.add('hidden');
+  setNamesEditable(false);
+  if (transition) writeNameInputs(s.names);
+  endsAtMs = (s.ends_at || (Date.now()/1000 + s.remaining_seconds)) * 1000;
+  startCountdown();
+}
+
+function showFinished(s, transition) {
+  $('#timer-buttons').classList.add('hidden');
+  $('#countdown-wrap').classList.add('hidden');
+  $('#finish-overlay').classList.remove('hidden');
+  stopCountdown();
+}
+
+function startCountdown() {
+  stopCountdown();
+  const tick = () => {
+    const remainingMs = Math.max(0, endsAtMs - Date.now());
+    const total = Math.ceil(remainingMs / 1000);
+    const m = Math.floor(total / 60);
+    const sec = total % 60;
+    $('#countdown').textContent = `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+    if (remainingMs > 0) countdownRaf = requestAnimationFrame(tick);
+    else countdownRaf = null;
+  };
+  countdownRaf = requestAnimationFrame(tick);
+}
+
+function stopCountdown() {
+  if (countdownRaf) { cancelAnimationFrame(countdownRaf); countdownRaf = null; }
+}
+
+function setNamesEditable(en) {
+  $$('.name-input').forEach(i => i.disabled = !en);
+}
+
+function clearNameInputs() {
+  $$('.name-input').forEach(i => i.value = '');
+}
+
+function writeNameInputs(names) {
+  const inputs = $$('.name-input');
+  inputs.forEach((inp, i) => inp.value = names[i] || '');
+}
+
+function collectNames() {
+  return $$('.name-input').map(i => i.value.trim()).filter(n => n.length > 0).slice(0, 4);
+}
+
+function refreshTimerButtonsAvailability() {
+  const has = collectNames().length > 0;
+  $$('.timer-btn').forEach(b => { b.disabled = !has || prevStatus !== 'idle'; });
+}
+
+async function startChallenge(seconds) {
+  const names = collectNames();
+  if (!names.length) return;
+  try {
+    const r = await fetch('/api/challenge/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ names, duration_seconds: seconds })
+    });
+    if (r.ok) applyState(await r.json());
+  } catch (_) {}
+}
+
+async function ack() {
+  try {
+    const r = await fetch('/api/challenge/ack', { method: 'POST' });
+    if (r.ok) applyState(await r.json());
+  } catch (_) {}
+}
+
+function tickClock() {
+  const d = new Date();
+  $('#clock').textContent =
+    `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  $$('.timer-btn').forEach(btn => {
+    btn.addEventListener('click', () => startChallenge(parseInt(btn.dataset.seconds, 10)));
+  });
+  $$('.name-input').forEach(i => i.addEventListener('input', refreshTimerButtonsAvailability));
+  $('#finish-overlay').addEventListener('click', ack);
+
+  fetchTemp();
+  fetchState();
+  setInterval(fetchTemp, 2000);
+  setInterval(fetchState, 1000);
+  tickClock();
+  setInterval(tickClock, 1000);
+});
+</script>
 </body>
 </html>
