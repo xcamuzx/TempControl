@@ -13,7 +13,7 @@ UX flow (cycles):
 4. **Finish alert** — at 0:00, full-screen overlay: `Congratulations - Challenge Finished`. No audio, no browser notifications — overlay only.
 5. **Acknowledge click** — dismisses overlay, returns to step 1.
 
-Hard constraints (enforced backend AND frontend): max 4 names, max 3-minute countdown (60–180 s). Temperature readout visible at all times. Single-purpose kiosk — don't add multi-timer, history, auth, or other scope without checking with the user.
+Hard constraints (enforced backend AND frontend): max 4 names, max 3-minute countdown (60–180 s), max 32 chars per name. Temperature readout visible at all times. Single-purpose kiosk — don't add multi-timer, history, auth, or other scope without checking with the user.
 
 ## Commands
 
@@ -40,7 +40,7 @@ There is no `__main__` block in `main.py` — do not run `python main.py`. No te
 
 **Backend:** FastAPI (`app/main.py`) — state machine in a module-level `ChallengeState` dataclass (single-user kiosk, no DB). No background tasks or timers — state transitions (`running→finished`) happen lazily via `tick()` called at the top of every API handler. Sensor driver in `app/sensor.py` using `smbus2` against `/dev/i2c-1`; `read()` retries 3× with incremental backoff (50 ms, 100 ms, 150 ms) before raising `SensorError`. UPS battery driver in `app/ups.py` reads the MAX17040 fuel gauge (same bus, `0x36`) with the same retry pattern.
 
-**Frontend:** Single-file Jinja template (`app/templates/index.html`, ~790 lines) — all HTML, CSS, and JS inlined. No build step, no bundler, no Tailwind. Rough layout: CSS custom properties & styles (~lines 1–330), HTML structure (~330–460), `<script>` with polling + UI logic (~460–790). Vanilla CSS with Google Fonts (Bebas Neue / Fraunces / Italianno / Source Sans 3, fallbacks: Clear Sans + Monotype Corsiva). The frontend polls the backend: temperature every 2s (`/api/temp`), challenge state every 1s (`/api/challenge/state`), battery every 30s (`/api/battery`). Countdown display uses `requestAnimationFrame` against the server-provided `ends_at` timestamp for drift-free rendering.
+**Frontend:** Single-file Jinja template (`app/templates/index.html`, ~800 lines) — all HTML, CSS, and JS inlined. No build step, no bundler, no Tailwind. Rough layout: CSS custom properties & styles (~lines 1–330), HTML structure (~330–560), `<script>` with polling + UI logic (~560–800). Vanilla CSS with Google Fonts (Bebas Neue / Fraunces / Italianno / Source Sans 3, fallbacks: Clear Sans + Monotype Corsiva). The frontend polls the backend: temperature every 2s (`/api/temp`), challenge state every 1s (`/api/challenge/state`), battery every 30s (`/api/battery`). Countdown display uses `requestAnimationFrame` against the server-provided `ends_at` timestamp for drift-free rendering.
 
 **Visual effects:** Border-orbit comet animation during countdown (BL → TL → TR → BR → BL, 4s/edge, 16s loop, lead + two trailing halos). Finish overlay with frosted-glass backdrop.
 
@@ -98,14 +98,13 @@ Pi user is `fabricio`; passwordless sudo is **not** configured.
 
 ## Logo and QR
 
-Logo asset: `app/static/newyicebaths_logo.png`. The header has a QR slot — currently a placeholder div. Once the user provides a real `QR.png`: move to `app/static/QR.png` and replace the placeholder in `index.html` with an `<img>`.
+Logo asset: `app/static/newyicebaths_logo.png`. QR code: `app/static/QR.png`, displayed in the header via `<img>` tag.
 
 ## Phase status
 
 Done: Phase 0 (repo bootstrap) · Phase 1 (Pi I2C setup) · Phase 2 (sensor driver with CRC-8) · Phase 3 (FastAPI + state machine) · Phase 4 (kiosk UI).
 
 Pending:
-- Real `QR.png` from user (current root-level file is a duplicate of the logo).
 - **Phase 5** — kiosk autostart + service: `systemd` unit for FastAPI, Chromium kiosk autostart via `~/.config/wayfire.ini`, README install steps.
 
 ## Pitfalls
