@@ -1,0 +1,3 @@
+# PlatformIO build artifacts & local IDE config
+.pio/
+.vscode/
