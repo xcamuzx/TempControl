@@ -18,7 +18,11 @@ Challenge challenge;
 // Polling cadence mirrors the Pi UI: temperature ~2 s, battery ~30 s.
 constexpr uint32_t TEMP_PERIOD_MS = 2000;
 constexpr uint32_t BATT_PERIOD_MS = 30000;
-constexpr uint32_t FRAME_MS = 16;  // ~60 fps cap for a smooth breathing dot
+// Render policy: the breathing pacer animates while a countdown runs; the
+// idle/finished screens are static and only redrawn when something changes.
+constexpr uint32_t ANIM_PERIOD_MS = 50;   // ~20 fps while running
+constexpr uint32_t STATIC_MIN_MS  = 100;  // debounce static-screen redraws
+constexpr uint32_t LOOP_DELAY_MS  = 5;    // keep touch responsive, avoid spin
 
 float    g_tempC = 0.0f;
 bool     g_tempValid = false;
@@ -26,6 +30,9 @@ int      g_battPct = -1;
 uint32_t g_lastTemp = 0;
 uint32_t g_lastBatt = 0;
 uint32_t g_lastFrame = 0;
+bool     g_rendered = false;     // has the first frame been drawn?
+bool     g_dirty = true;         // a static-screen input changed → redraw
+Status   g_shownStatus = Status::Idle;
 
 void pollSensor() {
   Reading r;
@@ -36,6 +43,7 @@ void pollSensor() {
     g_tempValid = false;
     Serial.println("sensor read failed after retries");
   }
+  g_dirty = true;  // temperature readout may have changed
 }
 
 void handleTap(int x, int y) {
@@ -51,6 +59,15 @@ void handleTap(int x, int y) {
     case Status::Running:
       break;  // countdown runs to completion; no cancel (matches the kiosk)
   }
+}
+
+// Decide whether this loop iteration needs to repaint the screen.
+bool needsRender(uint32_t now) {
+  if (!g_rendered) return true;
+  if (challenge.status() != g_shownStatus) return true;  // state transition
+  if (challenge.status() == Status::Running)
+    return now - g_lastFrame >= ANIM_PERIOD_MS;          // animate the pacer
+  return g_dirty && (now - g_lastFrame >= STATIC_MIN_MS); // temp/battery change
 }
 
 }  // namespace
@@ -84,12 +101,18 @@ void loop() {
   if (now - g_lastBatt >= BATT_PERIOD_MS) {
     g_battPct = M5.Power.getBatteryLevel();
     g_lastBatt = now;
+    g_dirty = true;
   }
 
   challenge.tick();  // lazy running → finished transition
 
-  if (now - g_lastFrame >= FRAME_MS) {
+  if (needsRender(now)) {
     ui::render(challenge, g_tempC, g_tempValid, g_battPct);
     g_lastFrame = now;
+    g_shownStatus = challenge.status();
+    g_rendered = true;
+    g_dirty = false;
   }
+
+  delay(LOOP_DELAY_MS);
 }

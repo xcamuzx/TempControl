@@ -108,6 +108,10 @@ Pending:
 - Real `QR.png` from user (current root-level file is a duplicate of the logo).
 - **Phase 5** — kiosk autostart + service: `systemd` unit for FastAPI, Chromium kiosk autostart via `~/.config/wayfire.ini`, README install steps.
 
+### Hardware variant: M5Stack Core2 firmware (`firmware/`)
+
+A separate native C++ (Arduino/PlatformIO) port targeting an M5Stack Core2 (ESP32, 320×240 touch) lives in `firmware/`, independent of the Pi `app/`. The FastAPI/Jinja stack does not run on an MCU, so `ChallengeState` and the SHT3x driver were re-implemented and the UI rebuilt as native M5GFX draw calls. Standalone phase is done (live temp, 1/2/3-min countdown, box-breathing pacer, finish overlay, AXP192 battery); a WiFi name-roster upload page is the planned phase 2. SHT3x wires to **Grove Port A** (`GPIO32` SDA / `GPIO33` SCL) — the external I2C bus, never the internal `GPIO21/22` (AXP192 + touch). Portable logic is host-tested in `firmware/test/`; the full M5 build + on-hardware check are still pending. See `firmware/ARCHITECTURE.md`.
+
 ## Pitfalls
 
 - **SSH exit code 255** when backgrounded SSH commands get interrupted (e.g. by `pkill` from another SSH) — that's the SSH-disconnect code, not the remote process failing.

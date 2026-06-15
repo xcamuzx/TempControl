@@ -4,6 +4,7 @@
 
 #include <cstdio>
 
+#include "breathing.h"
 #include "config.h"
 
 namespace ui {
@@ -91,9 +92,10 @@ void renderIdle(float tempC, bool tempValid, int battPct) {
   const char* mins[3] = {"1:00", "2:00", "3:00"};
   for (int i = 0; i < 3; ++i) {
     int x = btnX(i);
+    // 2px border: outer + 1px-inset inner rounded rect.
     canvas.drawRoundRect(x, BTN_Y, BTN_W, BTN_H, 6, C_MID);
-    canvas.drawRoundRect(x, BTN_Y, BTN_W, BTN_H, 6, C_MID);  // 2px-ish border
-    canvas.fillRect(x, BTN_Y, 3, BTN_H, C_MID);              // accent bar
+    canvas.drawRoundRect(x + 1, BTN_Y + 1, BTN_W - 2, BTN_H - 2, 5, C_MID);
+    canvas.fillRect(x, BTN_Y, 3, BTN_H, C_MID);  // accent bar
     canvas.setFont(&fonts::FreeSansBold18pt7b);
     canvas.setTextDatum(middle_center);
     canvas.setTextColor(C_WHITE);
@@ -106,34 +108,21 @@ void renderIdle(float tempC, bool tempValid, int battPct) {
 
 // ─── Box-breathing pacer: dot travels the square, 4 s per edge ──────────────
 void drawBreathing(uint32_t elapsed_ms) {
-  const int cx = SCREEN_W / 2;
-  const int cy = 150;
-  const int h = 50;  // half-edge
+  constexpr int cx = SCREEN_W / 2;
+  constexpr int cy = 150;
+  constexpr int h = 50;  // half-edge
 
   canvas.drawRect(cx - h, cy - h, 2 * h, 2 * h, C_BLUE);
 
-  uint32_t phaseTime = elapsed_ms % BREATH_LOOP_MS;
-  int phase = phaseTime / BREATH_PHASE_MS;  // 0..3
-  float f = (phaseTime % BREATH_PHASE_MS) / (float)BREATH_PHASE_MS;
-
-  // BL → TL → TR → BR → BL  (Inhale, Hold, Exhale, Hold)
-  float px = cx, py = cy;
-  const char* label = "HOLD";
-  switch (phase) {
-    case 0: px = cx - h; py = (cy + h) - f * 2 * h; label = "INHALE"; break;
-    case 1: px = (cx - h) + f * 2 * h; py = cy - h; label = "HOLD"; break;
-    case 2: px = cx + h; py = (cy - h) + f * 2 * h; label = "EXHALE"; break;
-    case 3: px = (cx + h) - f * 2 * h; py = cy + h; label = "HOLD"; break;
-  }
-
-  canvas.fillCircle((int)px, (int)py, 11, C_BLUE);   // halo
-  canvas.fillCircle((int)px, (int)py, 7, C_MID);     // body
-  canvas.fillCircle((int)px, (int)py, 3, C_WHITE);   // core
+  const BreathPoint p = breathAt(elapsed_ms, cx, cy, h);
+  canvas.fillCircle((int)p.x, (int)p.y, 11, C_BLUE);  // halo
+  canvas.fillCircle((int)p.x, (int)p.y, 7, C_MID);    // body
+  canvas.fillCircle((int)p.x, (int)p.y, 3, C_WHITE);  // core
 
   canvas.setFont(&fonts::FreeSansBold12pt7b);
   canvas.setTextDatum(middle_center);
   canvas.setTextColor(C_PALE);
-  canvas.drawString(label, cx, cy);
+  canvas.drawString(p.label, cx, cy);
 }
 
 // ─── Running: countdown + breathing pacer; temperature stays visible ────────

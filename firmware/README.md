@@ -17,7 +17,10 @@ and the web UI was rebuilt as native draw calls.
 - a full-screen **finish overlay** (“CHALLENGE FINISHED”, tap to reset),
 - the Core2's own **battery** level (AXP192) in the header.
 
-Hard caps match the Pi backend: 60–180 s countdown.
+Hard caps match the Pi backend: 60–180 s countdown. Rendering is
+event-driven — static screens repaint only on change, and the breathing pacer
+animates at a capped rate only while a countdown runs (see
+[ARCHITECTURE.md](./ARCHITECTURE.md#render-policy-the-main-optimization)).
 
 **Phase 2 — planned (not built).** Boot a WiFi access point + small web page so
 an operator can upload a participant **name roster** from a phone; names then
@@ -62,21 +65,40 @@ pio device monitor      # serial @ 115200 (sensor errors print here)
 firmware/
   platformio.ini      board = m5stack-core2, framework = arduino, lib M5Unified
   src/
-    config.h          pins, colour palette (locked), duration caps, layout
+    config.h          pins, colour palette (locked), duration caps, breathing timing
     sht3x.h/.cpp      SHT3x driver — port of ../app/sensor.py (cmd 0x2C06, CRC-8)
     challenge.h       state machine — port of ChallengeState in ../app/main.py
-    ui.h/.cpp         native 320×240 UI (canvas-buffered, box-breathing pacer)
-    main.cpp          setup/loop: poll sensor + battery, handle touch, render
+    breathing.h       box-breathing dot geometry (pure, host-testable)
+    ui.h/.cpp         native 320×240 UI (canvas-buffered, event-driven repaint)
+    main.cpp          setup/loop: poll sensor + battery, handle touch, render policy
+  test/               host unit tests for the pure logic (no hardware needed)
+  ARCHITECTURE.md     module map, data flow, state machine, render strategy, Pi parity
 ```
 
-## Verified
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full design.
 
-The full firmware needs the M5 toolchain to compile (see note above). The
-**portable logic** was host-compiled and checked independently:
+## Tests
 
-- CRC-8 matches the SHT3x datasheet vector (`0xBEEF → 0x92`);
-- duration clamping (`999→180`, `10→60`), remaining-seconds, the lazy
-  `running→finished` transition, and `ack→idle` all behave correctly.
+The hardware-independent logic (CRC-8, state machine, breathing geometry) is
+unit-tested on the host with a stub `Arduino.h` — no device or M5 toolchain
+required:
 
-UI rendering, touch, and the live sensor path must still be confirmed on
-hardware.
+```bash
+cd firmware/test
+./run.sh
+```
+
+This covers: CRC-8 vs the SHT3x datasheet vector (`0xBEEF → 0x92`); duration
+clamping (`999→180`, `10→60`); remaining-seconds rounding; the lazy
+`running→finished` and `ack→idle` transitions; and box-breathing path
+continuity (edges meet, loop closes) with correct phase labels.
+
+## Verified vs. pending
+
+✅ **Host-verified:** all of the above (23 assertions, clean under
+`-Wall -Wextra`).
+
+⏳ **Pending on hardware:** the full firmware needs the M5 toolchain to compile
+(see the build note above — the PlatformIO registry must be reachable). UI
+rendering, touch hit-testing, and the live SHT3x path must still be confirmed
+on the Core2 itself.

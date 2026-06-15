@@ -1,3 +1,6 @@
 # PlatformIO build artifacts & local IDE config
 .pio/
 .vscode/
+
+# Compiled host test binary
+test/host_logic_test

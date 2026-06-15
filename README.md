@@ -25,3 +25,14 @@ cd ~/TempControl
 ```
 
 Then open `http://<pi-ip>:8000/` in a browser (or, in Phase 5, the Pi launches Chromium in kiosk mode pointing at `localhost:8000`).
+
+## ESP32 / M5Stack Core2 firmware
+
+A separate native port of the kiosk runs on an M5Stack Core2 (ESP32, 320×240
+touch) — the FastAPI/Jinja stack can't run on a microcontroller, so the state
+machine and SHT3x driver were re-implemented in C++ and the UI rebuilt as native
+draw calls. It's standalone (no WiFi): live temperature, a 1/2/3-minute
+countdown with a box-breathing pacer, and a finish overlay.
+
+See [`firmware/`](./firmware/) — [README](./firmware/README.md) for build/flash
+and wiring, [ARCHITECTURE.md](./firmware/ARCHITECTURE.md) for the design.
