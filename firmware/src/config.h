@@ -46,6 +46,13 @@ constexpr uint16_t C_OK    = rgb565(0x5d, 0xab, 0x6a);
 constexpr uint16_t C_LOW   = rgb565(0xd4, 0x81, 0x3a);
 constexpr uint16_t C_CRIT  = rgb565(0xc9, 0x4a, 0x4a);
 
+// ─── WiFi access point (phase 2 — name-roster upload) ───────────────────────
+// The Core2 hosts its own SoftAP; an operator joins it and opens the roster
+// page at http://192.168.4.1/. WPA2 needs a password of >= 8 chars; set to
+// nullptr for an open network.
+constexpr const char* AP_SSID     = "NewyIceBaths";
+constexpr const char* AP_PASSWORD = "icebath2026";
+
 // ─── Screen ─────────────────────────────────────────────────────────────────
 constexpr int SCREEN_W = 320;
 constexpr int SCREEN_H = 240;

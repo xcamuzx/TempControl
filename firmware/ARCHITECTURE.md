@@ -24,36 +24,43 @@ analogue here; the Core2's own AXP192 fuel gauge is read instead.
 
 | File | Responsibility | Depends on |
 |------|----------------|-----------|
-| `src/config.h`     | Pins, colour palette, duration caps, breathing timing — all the tunables in one place. | — |
+| `src/config.h`     | Pins, palette, duration caps, breathing timing, WiFi AP — all the tunables in one place. | — |
 | `src/sht3x.{h,cpp}`| SHT3x I2C driver. Pure hardware I/O; mirrors `app/sensor.py`. | `Wire` |
 | `src/challenge.h`  | State machine. Pure timing logic (`millis()`); mirrors `ChallengeState`. | `Arduino` (millis) |
 | `src/breathing.h`  | Box-breathing dot geometry. **Pure**, no drawing → host-testable. | `config.h` |
-| `src/ui.{h,cpp}`   | All rendering: canvas buffer, screens, touch hit-testing. Stateless. | `M5Unified`, `breathing.h` |
+| `src/roster.h`     | Participant name model + cleaning/validation. **Pure** → host-testable. | — (std only) |
+| `src/net.{h,cpp}`  | WiFi SoftAP + web server that edits the shared `Roster` (phase 2). | `WiFi`, `WebServer` |
+| `src/ui.{h,cpp}`   | All rendering: canvas buffer, screens, touch hit-testing. Stateless; takes a `View`. | `M5Unified`, `breathing.h`, `roster.h` |
 | `src/main.cpp`     | Orchestration: setup, the loop, polling cadence, touch dispatch, render policy. | everything |
 | `test/`            | Host unit tests for the pure logic (no hardware needed). | `g++` |
 
-The dependency direction is one-way (`main` → `ui` → `breathing`/`config`;
-`main` → `challenge`/`sht3x`). No module reaches back up, and the two pure
-headers (`challenge.h`, `breathing.h`) have no M5 dependency, which is what lets
-them be unit-tested on a host.
+The dependency direction is one-way (`main` → `ui` → `breathing`/`roster`/`config`;
+`main` → `challenge`/`sht3x`/`net`). No module reaches back up, and the three
+pure headers (`challenge.h`, `breathing.h`, `roster.h`) have no M5/Arduino
+dependency, which is what lets them be unit-tested on a host. `net` owns the
+web/WiFi side and mutates the `Roster`; `ui` only reads it.
 
 ## Data flow — the loop
 
 ```
 loop():
   M5.update()                      // refresh touch/buttons/power
+  net::loop()                      // service the roster web page
   touch?  → handleTap(x, y)        // idle: start; finished: ack; running: ignore
   every 2 s  → pollSensor()        // SHT3x read (retry), update temp + dirty flag
   every 30 s → battery level       // AXP192, update + dirty flag
+  roster changed? → dirty flag     // names uploaded via web (revision compare)
   challenge.tick()                 // lazy running → finished
   needsRender()? → ui::render(...) // see render policy below
   delay(5 ms)                      // keep touch snappy without busy-spinning
 ```
 
-State lives in two places only: the module-level `Challenge` (the machine) and
-a handful of `main.cpp` globals for the latest sensor/battery sample and render
-bookkeeping. `ui` holds just its off-screen canvas; it's otherwise a pure
-function of `(challenge, temp, battery)`.
+State lives in a few places only: the module-level `Challenge` (the machine),
+the module-level `Roster` (names), and a handful of `main.cpp` globals for the
+latest sensor/battery sample and render bookkeeping. Each render, `main` packs
+the display inputs into a `ui::View` (temp, battery, roster, AP info). `ui`
+holds just its off-screen canvas; it's otherwise a pure function of
+`(challenge, view)`.
 
 ## State machine
 
@@ -107,7 +114,7 @@ or tearing regardless of how much is drawn.
 | Finish transition | lazy `tick()` per request | lazy `tick()` per loop |
 | Countdown render | `requestAnimationFrame` vs `ends_at` | `remainingS()` (ceil) vs `millis()` deadline |
 | Battery | MAX17040 @ `0x36` | AXP192 via `M5.Power` |
-| Names | 1–4, typed in browser | not on-device (no keyboard) — WiFi roster, phase 2 |
+| Names | 1–4, typed in browser, `StartRequest` cleaning | 1–4 via SoftAP web page; same trim/drop/cap cleaning in `Roster` |
 
 ## Memory & timing notes
 
@@ -121,6 +128,26 @@ or tearing regardless of how much is drawn.
 - **`millis()` rollover** (~49 days) is handled with signed-difference
   comparisons throughout `challenge.h`.
 
+## WiFi roster (phase 2)
+
+`net` brings up a SoftAP (`AP_SSID`/`AP_PASSWORD` from `config.h`) and a
+synchronous `WebServer` on port 80, serviced by `net::loop()` each iteration:
+
+- `GET /` returns a small mobile-friendly form, prefilled with the current
+  roster (names HTML-escaped before echoing back).
+- `POST /save` reads `name0..name3`, hands the raw strings to
+  `Roster::setFrom()` (which does all the trim/drop/cap cleaning), then
+  `303`-redirects back to the form (POST/redirect/GET, so a refresh doesn't
+  re-submit).
+
+`Roster` is the single source of truth, edited only by `net` and read only by
+`ui`. It exposes a monotonic `revision()`; `main` compares it each loop and
+flags a repaint when it changes, so an upload shows up on screen without
+polling the contents. The roster is RAM-only (cleared on reboot).
+
+The challenge is still started from the device touch screen — the web page only
+manages who's listed, keeping the kiosk single-purpose.
+
 ## Testing
 
 `test/` host-compiles the pure logic with a stub `Arduino.h` (no toolchain, no
@@ -130,20 +157,22 @@ device) and asserts:
 - duration clamping, remaining-seconds rounding, and the lazy finish/ack
   transitions,
 - box-breathing path continuity (each edge's end meets the next edge's start,
-  and the loop closes) and phase labels.
+  and the loop closes) and phase labels,
+- roster cleaning: trim, drop-empties, cap at 4, truncate to 32, revision bump.
 
 ```bash
 cd firmware/test && ./run.sh
 ```
 
-The full firmware (UI, touch, live sensor) still requires the M5 toolchain and
-on-hardware verification — see `README.md`.
+The device-only paths (UI, touch, live sensor, and the WiFi/web server in
+`net.cpp`) still require the M5 toolchain and on-hardware verification — see
+`README.md`.
 
 ## Future work
 
-- **Phase 2 — WiFi roster**: boot a SoftAP + a small web page to upload
-  participant names; show them during a challenge. This is the one piece of the
-  original UX intentionally deferred from the standalone build.
+- **Persist the roster** across reboots (NVS / `Preferences`).
+- **Station mode**: optionally join an existing WiFi instead of hosting a
+  SoftAP, for venues with their own network.
 - **Sub-region animation**: if the ~20 fps full-frame push during a countdown
   ever proves too heavy, animate only the breathing-square sub-rect and repaint
   the countdown digits once per second, instead of recompositing the whole

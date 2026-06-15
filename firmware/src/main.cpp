@@ -7,6 +7,8 @@
 
 #include "challenge.h"
 #include "config.h"
+#include "net.h"
+#include "roster.h"
 #include "sht3x.h"
 #include "ui.h"
 
@@ -14,6 +16,7 @@ namespace {
 
 SHT3x sensor(SHT3X_ADDR);
 Challenge challenge;
+Roster roster;
 
 // Polling cadence mirrors the Pi UI: temperature ~2 s, battery ~30 s.
 constexpr uint32_t TEMP_PERIOD_MS = 2000;
@@ -33,6 +36,7 @@ uint32_t g_lastFrame = 0;
 bool     g_rendered = false;     // has the first frame been drawn?
 bool     g_dirty = true;         // a static-screen input changed → redraw
 Status   g_shownStatus = Status::Idle;
+uint32_t g_rosterRev = 0;        // last roster revision we drew
 
 void pollSensor() {
   Reading r;
@@ -81,6 +85,7 @@ void setup() {
   Serial.begin(115200);
   sensor.begin();
   ui::begin();
+  net::begin(&roster);  // WiFi AP + roster web page
 
   pollSensor();
   g_battPct = M5.Power.getBatteryLevel();
@@ -89,6 +94,7 @@ void setup() {
 
 void loop() {
   M5.update();
+  net::loop();  // service the roster web page
 
   auto t = M5.Touch.getDetail();
   if (t.wasPressed()) handleTap(t.x, t.y);
@@ -103,11 +109,22 @@ void loop() {
     g_lastBatt = now;
     g_dirty = true;
   }
+  if (roster.revision() != g_rosterRev) {  // names uploaded via the web page
+    g_rosterRev = roster.revision();
+    g_dirty = true;
+  }
 
   challenge.tick();  // lazy running → finished transition
 
   if (needsRender(now)) {
-    ui::render(challenge, g_tempC, g_tempValid, g_battPct);
+    ui::View v;
+    v.tempC = g_tempC;
+    v.tempValid = g_tempValid;
+    v.battPct = g_battPct;
+    v.roster = &roster;
+    v.apSsid = net::ssid();
+    v.apIp = net::ip();
+    ui::render(challenge, v);
     g_lastFrame = now;
     g_shownStatus = challenge.status();
     g_rendered = true;

@@ -8,7 +8,7 @@ and the web UI was rebuilt as native draw calls.
 
 ## Status
 
-**Phase 1 — standalone (this firmware).** No WiFi. The screen shows:
+**Phase 1 — standalone.** The screen shows:
 
 - live **temperature** from the SHT3x (always visible),
 - three **timer buttons** (1 / 2 / 3 min) — tap to start,
@@ -22,9 +22,10 @@ event-driven — static screens repaint only on change, and the breathing pacer
 animates at a capped rate only while a countdown runs (see
 [ARCHITECTURE.md](./ARCHITECTURE.md#render-policy-the-main-optimization)).
 
-**Phase 2 — planned (not built).** Boot a WiFi access point + small web page so
-an operator can upload a participant **name roster** from a phone; names then
-appear on-device during a challenge.
+**Phase 2 — WiFi name roster.** The Core2 hosts a WiFi access point and a small
+web page so an operator can upload up to 4 participant **names** from a phone;
+they then appear on the idle and countdown screens. See
+[Roster upload](#roster-upload-phase-2) below. (Tracked in issue #3.)
 
 ## Wiring
 
@@ -41,6 +42,22 @@ for the AXP192 PMU and the touch controller.
 
 Pins live in `src/config.h` (`PIN_I2C_SDA`, `PIN_I2C_SCL`) if your breakout
 differs. Sensor address is `0x44` (SHT30/31/35 default).
+
+## Roster upload (phase 2)
+
+On boot the Core2 starts a WiFi access point. The idle screen shows how to
+connect (`JOIN <ssid> @ <ip> …`) until names are set.
+
+1. On a phone/laptop, join the WiFi network **`NewyIceBaths`** (default password
+   `icebath2026`).
+2. Open **`http://192.168.4.1/`**.
+3. Type up to 4 names and tap **Save roster**. The names appear on the device
+   immediately, on both the idle and countdown screens.
+
+SSID/password are in `src/config.h` (`AP_SSID`, `AP_PASSWORD`; set the password
+to `nullptr` for an open network). The roster lives in RAM — it resets on
+reboot (persistence is a possible follow-up). The challenge is still started by
+tapping a timer button **on the device**; the web page only manages names.
 
 ## Build & flash
 
@@ -65,10 +82,12 @@ pio device monitor      # serial @ 115200 (sensor errors print here)
 firmware/
   platformio.ini      board = m5stack-core2, framework = arduino, lib M5Unified
   src/
-    config.h          pins, colour palette (locked), duration caps, breathing timing
+    config.h          pins, palette, duration caps, breathing timing, WiFi AP
     sht3x.h/.cpp      SHT3x driver — port of ../app/sensor.py (cmd 0x2C06, CRC-8)
     challenge.h       state machine — port of ChallengeState in ../app/main.py
     breathing.h       box-breathing dot geometry (pure, host-testable)
+    roster.h          participant name model (pure, host-testable)
+    net.h/.cpp        WiFi SoftAP + web server for the roster upload (phase 2)
     ui.h/.cpp         native 320×240 UI (canvas-buffered, event-driven repaint)
     main.cpp          setup/loop: poll sensor + battery, handle touch, render policy
   test/               host unit tests for the pure logic (no hardware needed)
@@ -90,15 +109,16 @@ cd firmware/test
 
 This covers: CRC-8 vs the SHT3x datasheet vector (`0xBEEF → 0x92`); duration
 clamping (`999→180`, `10→60`); remaining-seconds rounding; the lazy
-`running→finished` and `ack→idle` transitions; and box-breathing path
-continuity (edges meet, loop closes) with correct phase labels.
+`running→finished` and `ack→idle` transitions; box-breathing path continuity
+(edges meet, loop closes) with correct phase labels; and roster cleaning
+(trim, drop-empties, cap at 4, truncate to 32, revision bump).
 
 ## Verified vs. pending
 
-✅ **Host-verified:** all of the above (23 assertions, clean under
+✅ **Host-verified:** all of the above (31 assertions, clean under
 `-Wall -Wextra`).
 
 ⏳ **Pending on hardware:** the full firmware needs the M5 toolchain to compile
 (see the build note above — the PlatformIO registry must be reachable). UI
-rendering, touch hit-testing, and the live SHT3x path must still be confirmed
-on the Core2 itself.
+rendering, touch hit-testing, the live SHT3x path, and the WiFi roster page
+(SoftAP join + form submit) must still be confirmed on the Core2 itself.

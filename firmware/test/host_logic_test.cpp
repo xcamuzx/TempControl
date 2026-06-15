@@ -8,9 +8,12 @@
 #include <cmath>
 #include <string>
 
+#include <vector>
+
 #include "../src/config.h"
 #include "../src/challenge.h"
 #include "../src/breathing.h"
+#include "../src/roster.h"
 
 // CRC-8 copy of SHT3x::crc8 (poly 0x31, init 0xFF) to check driver parity.
 static uint8_t crc8(const uint8_t* d, int n) {
@@ -73,6 +76,26 @@ int main() {
   chk("loop closes back to BL", loop.phase == 0 && feq(loop.x, 110) && feq(loop.y, 200));
   chk("phase0 label INHALE", std::string(breathAt(0, cx, cy, h).label) == "INHALE");
   chk("phase2 label EXHALE", std::string(breathAt(8000, cx, cy, h).label) == "EXHALE");
+
+  printf("Roster (phase 2 — name upload cleaning):\n");
+  Roster r;
+  chk("empty by default", r.empty() && r.size() == 0);
+  // trims, drops empties/whitespace, keeps order, caps at MAX (4)
+  r.setFrom({" Alice ", "", "Bob", "   ", "Carl", "Dave", "Eve"});
+  chk("keeps 4 (over-MAX dropped)", r.size() == 4);
+  chk("trimmed first name == 'Alice'", r[0] == "Alice");
+  chk("order preserved (Bob, Carl, Dave)",
+      r[1] == "Bob" && r[2] == "Carl" && r[3] == "Dave");
+  // length cap at 32
+  r.setFrom({std::string(40, 'x')});
+  chk("name truncated to 32", r.size() == 1 && r[0].size() == 32);
+  // revision increments on each mutation
+  uint32_t before = r.revision();
+  r.setFrom({"Sam"}); chk("revision bumps on setFrom", r.revision() == before + 1);
+  r.clear(); chk("clear empties + bumps revision",
+                 r.empty() && r.revision() == before + 2);
+  // all-empty input yields an empty roster
+  r.setFrom({"", "  ", "\t"}); chk("all-whitespace -> empty", r.empty());
 
   printf("\n%s (%d failure%s)\n", fails ? "*** FAILURES ***" : "ALL PASS",
          fails, fails == 1 ? "" : "s");

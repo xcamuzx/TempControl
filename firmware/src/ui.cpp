@@ -3,9 +3,11 @@
 #include <M5Unified.h>
 
 #include <cstdio>
+#include <string>
 
 #include "breathing.h"
 #include "config.h"
+#include "roster.h"
 
 namespace ui {
 
@@ -66,25 +68,56 @@ void drawTempBig(float tempC, bool valid, int cy) {
   canvas.drawCircle(dx, dy, 4, C_MID);
 }
 
-// ─── Idle: temperature + three timer buttons ────────────────────────────────
-void renderIdle(float tempC, bool tempValid, int battPct) {
+// Roster names joined with " / " (ASCII-only for the bundled GFX fonts), or
+// empty if there are none.
+std::string rosterNames(const Roster* r) {
+  std::string s;
+  if (r) {
+    for (std::size_t i = 0; i < r->size(); ++i) {
+      if (i) s += "  /  ";
+      s += (*r)[i];
+    }
+  }
+  return s;
+}
+
+// Roster on the top line, or a "join the AP" hint when it's empty.
+void drawRosterLine(const View& v, int y) {
+  canvas.setFont(&fonts::FreeSans9pt7b);
+  canvas.setTextDatum(top_center);
+  const std::string names = rosterNames(v.roster);
+  if (!names.empty()) {
+    canvas.setTextColor(C_PALE);
+    canvas.drawString(names.c_str(), SCREEN_W / 2, y);
+  } else {
+    char buf[80];
+    snprintf(buf, sizeof(buf), "JOIN  %s  @  %s  TO ADD NAMES", v.apSsid, v.apIp);
+    canvas.setTextColor(C_MUTE);
+    canvas.drawString(buf, SCREEN_W / 2, y);
+  }
+}
+
+// ─── Idle: roster/AP, temperature, three timer buttons ──────────────────────
+void renderIdle(const View& v) {
   canvas.setFont(&fonts::FreeSansBold9pt7b);
   canvas.setTextDatum(top_left);
   canvas.setTextColor(C_PALE);
   canvas.drawString("NEWY ICE BATHS", 12, 10);
-  drawBattery(battPct);
+  drawBattery(v.battPct);
+
+  drawRosterLine(v, 32);
 
   canvas.setFont(&fonts::FreeSans9pt7b);
   canvas.setTextDatum(top_center);
   canvas.setTextColor(C_PALE);
-  canvas.drawString("BATH TEMPERATURE", SCREEN_W / 2, 34);
+  canvas.drawString("BATH TEMPERATURE", SCREEN_W / 2, 54);
 
-  drawTempBig(tempC, tempValid, 82);
+  drawTempBig(v.tempC, v.tempValid, 94);
 
   canvas.setFont(&fonts::FreeSans9pt7b);
   canvas.setTextDatum(top_center);
   canvas.setTextColor(C_MUTE);
-  canvas.drawString("CELSIUS  -  LIVE", SCREEN_W / 2, 116);
+  canvas.drawString("CELSIUS  -  LIVE", SCREEN_W / 2, 126);
 
   canvas.setTextColor(C_PALE);
   canvas.drawString("THE CHALLENGE  -  TAP TO START", SCREEN_W / 2, 148);
@@ -126,17 +159,16 @@ void drawBreathing(uint32_t elapsed_ms) {
 }
 
 // ─── Running: countdown + breathing pacer; temperature stays visible ────────
-void renderRunning(const Challenge& ch, float tempC, bool tempValid,
-                   int battPct) {
+void renderRunning(const Challenge& ch, const View& v) {
   // Temperature must remain visible at all times → top-left readout.
   char tbuf[16];
-  if (tempValid) snprintf(tbuf, sizeof(tbuf), "%.1f C", tempC);
+  if (v.tempValid) snprintf(tbuf, sizeof(tbuf), "%.1f C", v.tempC);
   else snprintf(tbuf, sizeof(tbuf), "-- C");
   canvas.setFont(&fonts::FreeSansBold12pt7b);
   canvas.setTextDatum(top_left);
   canvas.setTextColor(C_MID);
   canvas.drawString(tbuf, 12, 8);
-  drawBattery(battPct);
+  drawBattery(v.battPct);
 
   char cbuf[8];
   formatClock(ch.remainingS(), cbuf, sizeof(cbuf));
@@ -144,7 +176,16 @@ void renderRunning(const Challenge& ch, float tempC, bool tempValid,
   canvas.setTextSize(1);
   canvas.setTextDatum(middle_center);
   canvas.setTextColor(C_WHITE);
-  canvas.drawString(cbuf, SCREEN_W / 2, 58);
+  canvas.drawString(cbuf, SCREEN_W / 2, 56);
+
+  // Participants, between the countdown and the pacer.
+  const std::string names = rosterNames(v.roster);
+  if (!names.empty()) {
+    canvas.setFont(&fonts::FreeSans9pt7b);
+    canvas.setTextDatum(top_center);
+    canvas.setTextColor(C_PALE);
+    canvas.drawString(names.c_str(), SCREEN_W / 2, 90);
+  }
 
   drawBreathing(millis() - ch.startedAt());
 }
@@ -178,12 +219,12 @@ void begin() {
   canvas.createSprite(SCREEN_W, SCREEN_H);
 }
 
-void render(const Challenge& ch, float tempC, bool tempValid, int battPct) {
+void render(const Challenge& ch, const View& v) {
   canvas.fillSprite(C_DEEP);
 
   switch (ch.status()) {
-    case Status::Idle:     renderIdle(tempC, tempValid, battPct); break;
-    case Status::Running:  renderRunning(ch, tempC, tempValid, battPct); break;
+    case Status::Idle:     renderIdle(v); break;
+    case Status::Running:  renderRunning(ch, v); break;
     case Status::Finished: renderFinished(); break;
   }
 
