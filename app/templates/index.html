@@ -633,16 +633,32 @@ footer {
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
+const els = {
+  tempValue: $('#temp-value'),
+  batteryPct: $('#battery-pct'),
+  batteryDot: $('#battery-dot'),
+  timerButtons: $('#timer-buttons'),
+  countdownWrap: $('#countdown-wrap'),
+  countdown: $('#countdown'),
+  finishOverlay: $('#finish-overlay'),
+  borderOrbit: $('#border-orbit'),
+  clock: $('#clock'),
+};
+const nameInputs = $$('.name-input');
+const timerButtons = $$('.timer-btn');
+
 let prevStatus = null;
 let countdownRaf = null;
 let endsAtMs = null;
+let displayedCountdown = null;
 
 async function fetchTemp() {
   try {
     const r = await fetch('/api/temp');
     if (!r.ok) return;
     const data = await r.json();
-    $('#temp-value').textContent = data.temp_c.toFixed(1);
+    const next = data.temp_c.toFixed(1);
+    if (els.tempValue.textContent !== next) els.tempValue.textContent = next;
   } catch (_) {}
 }
 
@@ -652,9 +668,10 @@ async function fetchBattery() {
     if (!r.ok) return;
     const data = await r.json();
     const pct = Math.round(data.percent);
-    $('#battery-pct').textContent = pct + '%';
-    const dot = $('#battery-dot');
-    dot.className = 'battery-dot ' + (pct > 25 ? 'ok' : pct > 10 ? 'low' : 'crit');
+    const text = pct + '%';
+    if (els.batteryPct.textContent !== text) els.batteryPct.textContent = text;
+    const dotClass = 'battery-dot ' + (pct > 25 ? 'ok' : pct > 10 ? 'low' : 'crit');
+    if (els.batteryDot.className !== dotClass) els.batteryDot.className = dotClass;
   } catch (_) {}
 }
 
@@ -677,77 +694,92 @@ function applyState(s) {
 }
 
 function showIdle(transition) {
-  $('#timer-buttons').classList.remove('hidden');
-  $('#countdown-wrap').classList.add('hidden');
-  $('#finish-overlay').classList.add('hidden');
-  $('#border-orbit').classList.remove('active');
+  els.timerButtons.classList.remove('hidden');
+  els.countdownWrap.classList.add('hidden');
+  els.finishOverlay.classList.add('hidden');
+  els.borderOrbit.classList.remove('active');
   setNamesEditable(true);
   if (transition) clearNameInputs();
   stopCountdown();
 }
 
 function showRunning(s, transition) {
-  $('#timer-buttons').classList.add('hidden');
-  $('#countdown-wrap').classList.remove('hidden');
-  $('#finish-overlay').classList.add('hidden');
+  els.timerButtons.classList.add('hidden');
+  els.countdownWrap.classList.remove('hidden');
+  els.finishOverlay.classList.add('hidden');
   setNamesEditable(false);
   if (transition) writeNameInputs(s.names);
-  endsAtMs = (s.ends_at || (Date.now()/1000 + s.remaining_seconds)) * 1000;
-  startCountdown();
+  const nextEndsAtMs = (s.ends_at || (Date.now()/1000 + s.remaining_seconds)) * 1000;
+  const deadlineChanged = endsAtMs === null || Math.abs(nextEndsAtMs - endsAtMs) > 250;
+  endsAtMs = nextEndsAtMs;
+  if (transition || deadlineChanged || countdownRaf === null) startCountdown();
   if (transition) {
-    const orbit = $('#border-orbit');
-    orbit.classList.remove('active');
-    void orbit.offsetWidth;  /* force reflow so the animation restarts at BL */
-    orbit.classList.add('active');
+    els.borderOrbit.classList.remove('active');
+    void els.borderOrbit.offsetWidth;  /* force reflow so the animation restarts at BL */
+    els.borderOrbit.classList.add('active');
   }
 }
 
 function showFinished(s, transition) {
-  $('#timer-buttons').classList.add('hidden');
-  $('#countdown-wrap').classList.add('hidden');
-  $('#finish-overlay').classList.remove('hidden');
-  $('#border-orbit').classList.remove('active');
+  els.timerButtons.classList.add('hidden');
+  els.countdownWrap.classList.add('hidden');
+  els.finishOverlay.classList.remove('hidden');
+  els.borderOrbit.classList.remove('active');
   stopCountdown();
 }
 
 function startCountdown() {
   stopCountdown();
+  displayedCountdown = null;
   const tick = () => {
     const remainingMs = Math.max(0, endsAtMs - Date.now());
     const total = Math.ceil(remainingMs / 1000);
     const m = Math.floor(total / 60);
     const sec = total % 60;
-    $('#countdown').textContent = `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+    const next = `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+    if (next !== displayedCountdown) {
+      els.countdown.textContent = next;
+      displayedCountdown = next;
+    }
     if (remainingMs > 0) countdownRaf = requestAnimationFrame(tick);
     else countdownRaf = null;
   };
-  countdownRaf = requestAnimationFrame(tick);
+  tick();
 }
 
 function stopCountdown() {
   if (countdownRaf) { cancelAnimationFrame(countdownRaf); countdownRaf = null; }
+  displayedCountdown = null;
 }
 
 function setNamesEditable(en) {
-  $$('.name-input').forEach(i => i.disabled = !en);
+  nameInputs.forEach(i => {
+    const disabled = !en;
+    if (i.disabled !== disabled) i.disabled = disabled;
+  });
 }
 
 function clearNameInputs() {
-  $$('.name-input').forEach(i => i.value = '');
+  nameInputs.forEach(i => { if (i.value) i.value = ''; });
 }
 
 function writeNameInputs(names) {
-  const inputs = $$('.name-input');
-  inputs.forEach((inp, i) => inp.value = names[i] || '');
+  nameInputs.forEach((inp, i) => {
+    const next = names[i] || '';
+    if (inp.value !== next) inp.value = next;
+  });
 }
 
 function collectNames() {
-  return $$('.name-input').map(i => i.value.trim()).filter(n => n.length > 0).slice(0, 4);
+  return nameInputs.map(i => i.value.trim()).filter(n => n.length > 0).slice(0, 4);
 }
 
 function refreshTimerButtonsAvailability() {
   const has = collectNames().length > 0;
-  $$('.timer-btn').forEach(b => { b.disabled = !has || prevStatus !== 'idle'; });
+  const disabled = !has || prevStatus !== 'idle';
+  timerButtons.forEach(b => {
+    if (b.disabled !== disabled) b.disabled = disabled;
+  });
 }
 
 async function startChallenge(seconds) {
@@ -772,16 +804,16 @@ async function ack() {
 
 function tickClock() {
   const d = new Date();
-  $('#clock').textContent =
-    `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  const next = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  if (els.clock.textContent !== next) els.clock.textContent = next;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  $$('.timer-btn').forEach(btn => {
+  timerButtons.forEach(btn => {
     btn.addEventListener('click', () => startChallenge(parseInt(btn.dataset.seconds, 10)));
   });
-  $$('.name-input').forEach(i => i.addEventListener('input', refreshTimerButtonsAvailability));
-  $('#finish-overlay').addEventListener('click', ack);
+  nameInputs.forEach(i => i.addEventListener('input', refreshTimerButtonsAvailability));
+  els.finishOverlay.addEventListener('click', ack);
 
   fetchTemp();
   fetchState();
