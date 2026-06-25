@@ -1,0 +1,33 @@
+#!/bin/sh
+#
+# BusyBox init script for the TempControl Duo app.
+# Install to /etc/init.d/S99tempcontrol on the Milk-V Duo (chmod +x), so it
+# autostarts at boot. The stock Duo image uses BusyBox init, NOT systemd.
+#
+# Edit APP_DIR / I2C_BUS / BUTTON_GPIO to match your wiring before installing.
+
+APP_DIR=/root/TempControl/milkv_duo
+PY=python3
+I2C_BUS=0
+BUTTON_GPIO=0          # <-- set to the sysfs GPIO number of your button
+PIDFILE=/var/run/tempcontrol.pid
+
+start() {
+    echo "Starting TempControl..."
+    cd "$APP_DIR" || exit 1
+    start-stop-daemon -S -b -m -p "$PIDFILE" -x "$PY" -- \
+        tempcontrol_duo.py --i2c-bus "$I2C_BUS" --button-gpio "$BUTTON_GPIO"
+}
+
+stop() {
+    echo "Stopping TempControl..."
+    start-stop-daemon -K -p "$PIDFILE"
+    rm -f "$PIDFILE"
+}
+
+case "$1" in
+    start) start ;;
+    stop) stop ;;
+    restart) stop; sleep 1; start ;;
+    *) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac

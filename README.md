@@ -12,6 +12,15 @@ cp .env.example .env   # fill in Pi SSH details
 
 The app is intended to run on the Pi, not on a dev host — there's no I2C bus on a regular laptop.
 
+## Milk-V Duo 256M + ST7789 square LCD
+
+A standalone, offline build for a Milk-V Duo 256M driving a 240×240 ST7789
+square LCD — no web server, no names, single-button (Start/Stop, double-press to
+restart), with a "box breathing" square and the live temperature. It renders
+natively to the framebuffer in pure-stdlib Python (the Duo can't run the
+Chromium kiosk). See [MILKV_DUO_ST7789.md](./MILKV_DUO_ST7789.md) and
+[`milkv_duo/`](./milkv_duo/).
+
 ## M5Stack Core2 / ESP32 notes
 
 The Python/FastAPI kiosk app is Linux/Pi software and does not compile directly
