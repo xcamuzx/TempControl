@@ -5,9 +5,9 @@ It uses `uvicorn`, Jinja templates, and `smbus2` against `/dev/i2c-1`, so the
 dashboard itself does not compile as ESP32 firmware.
 
 For the M5Stack Core2 target, this repo includes a separate Arduino/PlatformIO
-sensor probe at `firmware/core2_sen0385/`. It validates the DFRobot SEN0385
-(SHT31-class) temperature/humidity sensor wiring and reads the same 6-byte SHT3x
-single-shot measurement frame that the Pi driver uses.
+firmware app at `firmware/core2_sen0385/`. It validates the DFRobot SEN0385
+(SHT31-class) temperature/humidity sensor wiring, hosts a browser photo-proof
+page over Wi-Fi, and saves submitted user login metadata to the Core2 SD card.
 
 ## Sandbox check results
 
@@ -30,7 +30,7 @@ Verified endpoints:
 
 Those `503` responses are expected off-hardware.
 
-## Build the Core2 SEN0385 probe
+## Build the Core2 SEN0385 firmware
 
 Install PlatformIO, then build the firmware:
 
@@ -46,7 +46,39 @@ python3 -m platformio run -e m5stack-core2 -t upload
 python3 -m platformio device monitor -b 115200
 ```
 
-The probe prints temperature and humidity to the serial monitor every 2 seconds.
+The firmware starts a Wi-Fi access point, hosts the capture page, and prints
+sensor/SD status to the serial monitor.
+
+## Core2 browser and SD-card workflow
+
+1. Insert a FAT32-formatted microSD card into the Core2.
+2. Flash the firmware.
+3. Power the Core2 and connect your phone/laptop to Wi-Fi:
+   - SSID: `TempControl-Core2`
+   - Password: `tempcontrol`
+4. Open `http://192.168.4.1/`.
+5. Enter:
+   - `Name`
+   - `Week` as `xxx/999`
+   - `Badges`
+6. Take or choose a picture.
+7. Tap `Request GPS` and approve location permission.
+8. Tap `Save Picture + Log`.
+
+The browser downloads a PNG photo proof with name, week, badges, temperature,
+humidity, date/time, and GPS printed into the image. The ESP32 appends the login
+metadata to:
+
+```text
+/logins.csv
+```
+
+on the Core2 SD card.
+
+Browser note: the photo uses a camera file input for compatibility. GPS still
+depends on the browser allowing location permission for the page; if the browser
+blocks GPS on local HTTP pages, the image and CSV will record location as
+unavailable.
 
 ## Core2 GPIO connection guide
 
