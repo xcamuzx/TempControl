@@ -7,7 +7,8 @@ dashboard itself does not compile as ESP32 firmware.
 For the M5Stack Core2 target, this repo includes a separate Arduino/PlatformIO
 firmware app at `firmware/core2_sen0385/`. It validates the DFRobot SEN0385
 (SHT31-class) temperature/humidity sensor wiring, hosts a browser photo-proof
-page over Wi-Fi, and saves submitted user login metadata to the Core2 SD card.
+page over Wi-Fi, saves submitted user login metadata to the Core2 SD card, and
+drives a Duinotech WS2812/NeoPixel-style LED ring for the breathing countdown.
 
 ## Sandbox check results
 
@@ -57,13 +58,14 @@ sensor/SD status to the serial monitor.
    - SSID: `TempControl-Core2`
    - Password: `tempcontrol`
 4. Open `http://192.168.4.1/`.
-5. Enter:
+5. Use `Start 3 Min` to run the LED ring breathing countdown.
+6. Enter:
    - `Name`
    - `Week` as `xxx/999`
    - `Badges`
-6. Take or choose a picture.
-7. Tap `Request GPS` and approve location permission.
-8. Tap `Save Picture + Log`.
+7. Take or choose a picture.
+8. Tap `Request GPS` and approve location permission.
+9. Tap `Save Picture + Log`.
 
 The browser downloads a PNG photo proof with name, week, badges, temperature,
 humidity, date/time, and GPS printed into the image. The ESP32 appends the login
@@ -105,6 +107,38 @@ Notes:
 - Do not use the Core2 internal I2C pins (`GPIO21`/`GPIO22`) for this external
   sensor unless you intentionally wire through the M-BUS. Core2 Port A is
   `GPIO32`/`GPIO33`.
+
+## Duinotech circular NeoPixel / WS2812 LED ring
+
+The firmware defaults to the common Duinotech 24-LED circular WS2812 board. If
+your ring has a different LED count, change `kNeoPixelCount` in
+`firmware/core2_sen0385/src/main.cpp`.
+
+Recommended wiring:
+
+| Core2 / supply | NeoPixel ring pad | Notes |
+| --- | --- | --- |
+| GPIO27 | DI | Data input. Add a 330-470 ohm series resistor if available. |
+| 5V | V+ | Use a separate 5V supply for higher brightness or multiple rings. |
+| GND | GND | Must share ground with the Core2. |
+
+Power notes:
+
+- Keep brightness modest when powering the ring from the Core2 5V rail.
+- For best reliability with a 5V-powered WS2812 ring, use a 3.3V-to-5V logic
+  level shifter on the DI line.
+- A capacitor across V+ and GND near the ring is recommended for LED inrush
+  current.
+
+LED behavior:
+
+1. `Start 3 Min` flashes three white cue lights.
+2. A 3-minute countdown begins. The number of lit LEDs shrinks as time runs out.
+3. Breathing phases repeat:
+   - light green inhale for 4 seconds
+   - amber hold for 4 seconds
+   - red exhale for 4 seconds
+4. At zero, the whole ring blinks red three times and then turns off.
 
 ## Porting note
 

@@ -4,6 +4,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include <Wire.h>
+#include <Adafruit_NeoPixel.h>
 
 namespace {
 constexpr int kI2cSdaPin = 32;  // M5Stack Core2 Port A yellow wire.
@@ -19,11 +20,28 @@ constexpr int kSdMisoPin = 38;
 constexpr int kSdMosiPin = 23;
 constexpr int kSdCsPin = 4;
 
+constexpr int kNeoPixelPin = 27;
+constexpr uint16_t kNeoPixelCount = 24;
+constexpr uint8_t kNeoPixelBrightness = 72;
+constexpr uint32_t kRingFrameMs = 33;
+constexpr uint32_t kBreathingCountdownMs = 180000;
+constexpr uint32_t kBreathPhaseMs = 4000;
+constexpr uint8_t kFinishBlinkCount = 3;
+constexpr uint32_t kBlinkHalfPeriodMs = 250;
+
 constexpr char kApSsid[] = "TempControl-Core2";
 constexpr char kApPassword[] = "tempcontrol";
 constexpr char kLoginCsvPath[] = "/logins.csv";
 
 WebServer server(80);
+Adafruit_NeoPixel ring(kNeoPixelCount, kNeoPixelPin, NEO_GRB + NEO_KHZ800);
+
+enum class RingMode {
+  Idle,
+  Prestart,
+  Running,
+  FinishBlink,
+};
 
 uint8_t activeSensorAddress = 0;
 bool sdReady = false;
@@ -31,6 +49,11 @@ bool lastSensorOk = false;
 float lastTemperatureC = NAN;
 float lastHumidityRh = NAN;
 uint32_t lastSensorPollMs = 0;
+RingMode ringMode = RingMode::Idle;
+uint32_t ringPrestartStartedMs = 0;
+uint32_t ringCountdownStartedMs = 0;
+uint32_t ringFinishStartedMs = 0;
+uint32_t lastRingFrameMs = 0;
 
 const char kIndexHtml[] PROGMEM = R"rawliteral(
 <!doctype html>
@@ -48,11 +71,14 @@ label{display:block;margin:12px 0 6px;text-transform:uppercase;letter-spacing:.0
 input{box-sizing:border-box;width:100%;padding:12px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.28);color:#fff;font-size:16px}
 input::placeholder{color:rgba(255,255,255,.55)}
 button,a{display:inline-block;margin:12px 8px 0 0;padding:12px 14px;background:#0f75a8;border:1px solid rgba(255,255,255,.25);color:#fff;text-decoration:none;text-transform:uppercase;letter-spacing:.08em}
+.timer{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+.timer div{background:rgba(255,255,255,.08);padding:12px;border:1px solid rgba(255,255,255,.16)}
+.timer strong{display:block;font-size:24px;margin-top:4px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .status{min-height:24px;color:#ddd;margin-top:12px}
 canvas{display:block;max-width:100%;margin-top:14px;border:1px solid rgba(255,255,255,.24)}
 .hidden{display:none}
-@media(max-width:700px){.grid{grid-template-columns:1fr}h1{font-size:26px}}
+@media(max-width:700px){.grid,.timer{grid-template-columns:1fr}h1{font-size:26px}}
 </style>
 </head>
 <body>
@@ -61,6 +87,17 @@ canvas{display:block;max-width:100%;margin-top:14px;border:1px solid rgba(255,25
   <div class="card">
     <div>Sensor: <strong id="temp">-- C</strong> | Humidity: <strong id="humidity">-- %RH</strong></div>
     <div>Core2 SD login logging: <strong>/logins.csv</strong></div>
+  </div>
+  <div class="card">
+    <h2>LED Ring Breathing Timer</h2>
+    <div class="timer">
+      <div>Status<strong id="ring_status">idle</strong></div>
+      <div>Remaining<strong id="ring_remaining">3:00</strong></div>
+      <div>Phase<strong id="ring_phase">ready</strong></div>
+    </div>
+    <button id="timer_start">Start 3 Min</button>
+    <button id="timer_stop">Stop</button>
+    <div class="status">Ring: 3 start blinks, green inhale 4s, amber hold 4s, red exhale 4s, then 3 red finish blinks.</div>
   </div>
   <div class="card">
     <div class="grid">
@@ -81,11 +118,21 @@ canvas{display:block;max-width:100%;margin-top:14px;border:1px solid rgba(255,25
 <script>
 const $=s=>document.querySelector(s);
 let latestTemp=null,latestHumidity=null,photoImg=null,loc=null;
+function fmtSeconds(s){const m=Math.floor(s/60),sec=s%60;return m+':'+String(sec).padStart(2,'0')}
 async function pollTemp(){
   try{
     const r=await fetch('/api/temp');
     const d=await r.json();
     if(d.ok){latestTemp=d.temp_c;latestHumidity=d.humidity;$('#temp').textContent=d.temp_c.toFixed(1)+' C';$('#humidity').textContent=d.humidity.toFixed(1)+' %RH';}
+  }catch(_){}
+}
+async function pollTimer(){
+  try{
+    const r=await fetch('/api/timer/status');
+    const d=await r.json();
+    $('#ring_status').textContent=d.mode||'unknown';
+    $('#ring_remaining').textContent=fmtSeconds(d.remaining_seconds||0);
+    $('#ring_phase').textContent=d.phase||'ready';
   }catch(_){}
 }
 function status(t){$('#status').textContent=t}
@@ -141,7 +188,9 @@ $('#save').addEventListener('click',async()=>{
   const a=$('#download');a.href=p.data;a.download='tempcontrol-'+safe+'-'+Date.now()+'.png';a.classList.remove('hidden');a.click();
   try{status(await log(p.m)?'Picture saved and login logged to SD.':'Picture saved. SD logging failed.');}catch(e){status('Picture saved. SD logging failed: '+e.message);}
 });
-pollTemp();setInterval(pollTemp,2000);
+$('#timer_start').addEventListener('click',async()=>{try{await fetch('/api/timer/start',{method:'POST'});pollTimer();}catch(_){}});
+$('#timer_stop').addEventListener('click',async()=>{try{await fetch('/api/timer/stop',{method:'POST'});pollTimer();}catch(_){}});
+pollTemp();setInterval(pollTemp,2000);pollTimer();setInterval(pollTimer,1000);
 </script>
 </body>
 </html>
@@ -247,6 +296,167 @@ String csvEscape(String value) {
   return "\"" + value + "\"";
 }
 
+uint32_t scaledColor(uint8_t red, uint8_t green, uint8_t blue, uint8_t scale) {
+  return ring.Color((static_cast<uint16_t>(red) * scale) / 255,
+                    (static_cast<uint16_t>(green) * scale) / 255,
+                    (static_cast<uint16_t>(blue) * scale) / 255);
+}
+
+void clearRing() {
+  ring.clear();
+  ring.show();
+}
+
+void setAllPixels(uint32_t color) {
+  for (uint16_t i = 0; i < kNeoPixelCount; ++i) {
+    ring.setPixelColor(i, color);
+  }
+  ring.show();
+}
+
+void setThreeBlinkPixels(uint32_t color) {
+  ring.clear();
+  ring.setPixelColor(0, color);
+  ring.setPixelColor(kNeoPixelCount / 3, color);
+  ring.setPixelColor((2 * kNeoPixelCount) / 3, color);
+  ring.show();
+}
+
+const char *ringModeName() {
+  switch (ringMode) {
+    case RingMode::Idle:
+      return "idle";
+    case RingMode::Prestart:
+      return "prestart";
+    case RingMode::Running:
+      return "running";
+    case RingMode::FinishBlink:
+      return "finished";
+  }
+  return "unknown";
+}
+
+uint32_t ringRemainingMs(uint32_t now) {
+  if (ringMode == RingMode::Running) {
+    const uint32_t elapsed = now - ringCountdownStartedMs;
+    return elapsed >= kBreathingCountdownMs ? 0 : kBreathingCountdownMs - elapsed;
+  }
+  if (ringMode == RingMode::Prestart) {
+    return kBreathingCountdownMs;
+  }
+  return 0;
+}
+
+const char *breathPhaseName(uint32_t elapsedMs) {
+  const uint8_t phase = (elapsedMs / kBreathPhaseMs) % 3;
+  if (phase == 0) {
+    return "inhale";
+  }
+  if (phase == 1) {
+    return "hold";
+  }
+  return "exhale";
+}
+
+uint32_t breathPhaseColor(uint32_t elapsedMs) {
+  const uint8_t phase = (elapsedMs / kBreathPhaseMs) % 3;
+  const uint32_t phaseElapsed = elapsedMs % kBreathPhaseMs;
+  if (phase == 0) {
+    const uint8_t level = 40 + (phaseElapsed * 215UL) / kBreathPhaseMs;
+    return scaledColor(110, 255, 110, level);
+  }
+  if (phase == 1) {
+    return scaledColor(255, 170, 0, 220);
+  }
+  const uint8_t level = 255 - (phaseElapsed * 175UL) / kBreathPhaseMs;
+  return scaledColor(255, 0, 0, level);
+}
+
+void drawCountdownRing(uint32_t now) {
+  const uint32_t elapsed = now - ringCountdownStartedMs;
+  const uint32_t remaining = ringRemainingMs(now);
+  if (remaining == 0) {
+    ringMode = RingMode::FinishBlink;
+    ringFinishStartedMs = now;
+    setAllPixels(ring.Color(255, 0, 0));
+    return;
+  }
+
+  const uint16_t litPixels =
+      static_cast<uint16_t>(((uint64_t)remaining * kNeoPixelCount + kBreathingCountdownMs - 1) /
+                            kBreathingCountdownMs);
+  const uint32_t color = breathPhaseColor(elapsed);
+  ring.clear();
+  for (uint16_t i = 0; i < litPixels && i < kNeoPixelCount; ++i) {
+    ring.setPixelColor(i, color);
+  }
+  ring.show();
+}
+
+void startRingTimer() {
+  ringMode = RingMode::Prestart;
+  ringPrestartStartedMs = millis();
+  ringCountdownStartedMs = 0;
+  ringFinishStartedMs = 0;
+  lastRingFrameMs = 0;
+  setThreeBlinkPixels(ring.Color(255, 255, 255));
+}
+
+void stopRingTimer() {
+  ringMode = RingMode::Idle;
+  ringCountdownStartedMs = 0;
+  ringFinishStartedMs = 0;
+  clearRing();
+}
+
+void updateRing() {
+  const uint32_t now = millis();
+  if (now - lastRingFrameMs < kRingFrameMs) {
+    return;
+  }
+  lastRingFrameMs = now;
+
+  if (ringMode == RingMode::Idle) {
+    return;
+  }
+
+  if (ringMode == RingMode::Prestart) {
+    const uint32_t elapsed = now - ringPrestartStartedMs;
+    const uint8_t step = elapsed / kBlinkHalfPeriodMs;
+    if (step >= kFinishBlinkCount * 2) {
+      ringMode = RingMode::Running;
+      ringCountdownStartedMs = now;
+      drawCountdownRing(now);
+      return;
+    }
+    if (step % 2 == 0) {
+      setThreeBlinkPixels(ring.Color(255, 255, 255));
+    } else {
+      clearRing();
+    }
+    return;
+  }
+
+  if (ringMode == RingMode::Running) {
+    drawCountdownRing(now);
+    return;
+  }
+
+  if (ringMode == RingMode::FinishBlink) {
+    const uint32_t elapsed = now - ringFinishStartedMs;
+    const uint8_t step = elapsed / kBlinkHalfPeriodMs;
+    if (step >= kFinishBlinkCount * 2) {
+      stopRingTimer();
+      return;
+    }
+    if (step % 2 == 0) {
+      setAllPixels(ring.Color(255, 0, 0));
+    } else {
+      clearRing();
+    }
+  }
+}
+
 void pollSensorIfDue(bool force = false) {
   const uint32_t now = millis();
   if (!force && now - lastSensorPollMs < kSensorPollMs) {
@@ -341,6 +551,42 @@ void handleLogin() {
   json += "\"}";
   server.send(200, "application/json", json);
 }
+
+void handleTimerStatus() {
+  const uint32_t now = millis();
+  const uint32_t remainingMs = ringRemainingMs(now);
+  const uint32_t remainingSeconds = (remainingMs + 999) / 1000;
+  const char *phase = "ready";
+  if (ringMode == RingMode::Prestart) {
+    phase = "3 blink start";
+  } else if (ringMode == RingMode::Running) {
+    phase = breathPhaseName(now - ringCountdownStartedMs);
+  } else if (ringMode == RingMode::FinishBlink) {
+    phase = "3 red blinks";
+  }
+
+  String json = "{\"ok\":true,\"mode\":\"";
+  json += ringModeName();
+  json += "\",\"phase\":\"";
+  json += phase;
+  json += "\",\"remaining_seconds\":";
+  json += String(remainingSeconds);
+  json += ",\"duration_seconds\":180,\"led_count\":";
+  json += String(kNeoPixelCount);
+  json += "}";
+  sendCors();
+  server.send(200, "application/json", json);
+}
+
+void handleTimerStart() {
+  startRingTimer();
+  handleTimerStatus();
+}
+
+void handleTimerStop() {
+  stopRingTimer();
+  handleTimerStatus();
+}
 }  // namespace
 
 void setup() {
@@ -350,11 +596,15 @@ void setup() {
   Wire.begin(kI2cSdaPin, kI2cSclPin, kI2cFrequencyHz);
   SPI.begin(kSdSckPin, kSdMisoPin, kSdMosiPin, kSdCsPin);
   sdReady = SD.begin(kSdCsPin, SPI);
+  ring.begin();
+  ring.setBrightness(kNeoPixelBrightness);
+  clearRing();
 
   Serial.println();
   Serial.println("M5Stack Core2 TempControl capture server");
   Serial.printf("I2C: SDA GPIO%d, SCL GPIO%d, %lu Hz\n", kI2cSdaPin, kI2cSclPin,
                 static_cast<unsigned long>(kI2cFrequencyHz));
+  Serial.printf("NeoPixel ring: DI GPIO%d, LEDs %u\n", kNeoPixelPin, kNeoPixelCount);
   Serial.printf("SD: %s\n", sdReady ? "ready" : "not mounted");
 
   activeSensorAddress = detectSensorAddress();
@@ -373,6 +623,11 @@ void setup() {
   server.on("/api/temp", HTTP_GET, handleTemp);
   server.on("/api/login", HTTP_POST, handleLogin);
   server.on("/api/login", HTTP_OPTIONS, sendOptions);
+  server.on("/api/timer/status", HTTP_GET, handleTimerStatus);
+  server.on("/api/timer/start", HTTP_POST, handleTimerStart);
+  server.on("/api/timer/start", HTTP_OPTIONS, sendOptions);
+  server.on("/api/timer/stop", HTTP_POST, handleTimerStop);
+  server.on("/api/timer/stop", HTTP_OPTIONS, sendOptions);
   server.onNotFound([]() {
     sendCors();
     server.send(404, "application/json", "{\"ok\":false,\"error\":\"not found\"}");
@@ -384,6 +639,7 @@ void setup() {
 void loop() {
   server.handleClient();
   pollSensorIfDue();
+  updateRing();
   static uint32_t lastPrintMs = 0;
   if (millis() - lastPrintMs > 10000) {
     lastPrintMs = millis();
