@@ -16,7 +16,8 @@ The app is intended to run on the Pi, not on a dev host — there's no I2C bus o
 
 The Python/FastAPI kiosk app is Linux/Pi software and does not compile directly
 as ESP32 firmware. For an M5Stack Core2 + DFRobot SEN0385 sensor wiring guide
-and standalone ESP32 capture/SD logging firmware, see
+and standalone ESP32 capture/SD logging firmware with Duinotech NeoPixel
+breathing countdown support, see
 [ESP32_CORE2_SEN0385.md](./ESP32_CORE2_SEN0385.md).
 
 ## Running on the Pi

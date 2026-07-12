@@ -100,8 +100,8 @@ Notes:
 - Core2 ESP32 GPIO logic is `3.3V`. If using a bare breakout that pulls SDA/SCL
   up to its VCC and does not include level shifting, power the sensor from a
   `3.3V` pin instead of 5V so the I2C lines stay at 3.3V.
-- The probe uses `Wire.begin(32, 33, 100000)` for Core2 Port A.
-- The probe checks I2C address `0x44` first, then `0x45`. DFRobot documents
+- The firmware uses `Wire.begin(32, 33, 100000)` for Core2 Port A.
+- The firmware checks I2C address `0x44` first, then `0x45`. DFRobot documents
   SEN0385 at `0x44`; SHT31 modules may expose `0x44` or `0x45` depending on the
   address configuration.
 - Do not use the Core2 internal I2C pins (`GPIO21`/`GPIO22`) for this external
