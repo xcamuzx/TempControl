@@ -10,6 +10,10 @@ firmware app at `firmware/core2_sen0385/`. It validates the DFRobot SEN0385
 page over Wi-Fi, saves submitted user login metadata to the Core2 SD card, and
 drives a Duinotech WS2812/NeoPixel-style LED ring for the breathing countdown.
 
+For event-day operation, participant scripts, badge ideas, and SD-card data
+retrieval, see the
+[Interactive Marketing User Guide](./INTERACTIVE_MARKETING_USER_GUIDE.md).
+
 ## Sandbox check results
 
 Commands run successfully in the local sandbox:

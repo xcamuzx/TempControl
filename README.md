@@ -20,6 +20,9 @@ and standalone ESP32 capture/SD logging firmware with Duinotech NeoPixel
 breathing countdown support, see
 [ESP32_CORE2_SEN0385.md](./ESP32_CORE2_SEN0385.md).
 
+For event operators and marketing staff, see the
+[Interactive Marketing User Guide](./INTERACTIVE_MARKETING_USER_GUIDE.md).
+
 ## Running on the Pi
 
 The dependencies live in a venv at `~/TempControl/.venv`. Don't run `python main.py` — there's no `__main__` block, and you'd hit the system Python which doesn't have the deps.
